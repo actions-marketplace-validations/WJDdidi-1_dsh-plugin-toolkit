@@ -1,3 +1,19 @@
+## 0.13.11
+
+- `--home` is readable again: the flag reader named the wrong variable, so `dsh-plugin audit --home <dir>` failed with `args is not defined` before it ran.
+
+## 0.13.10
+
+- **`audit` now says why a plugin is not loaded.** One line covered three
+  different causes: the package is not in the profile's `dsh.profile.bundles`
+  (the loader mounts only listed bundles), it declares no `dsh.bundle` so there
+  is nothing to mount, or the running app predates the install. Only the last
+  one is a restart, and the first one cost this project hours.
+- **A plugin the app never loaded now fails the exit code.** `audit` returned
+  `ok` for a profile the running app had not picked up, so no script could gate
+  on it. It still exits 0 when no graph was read, because then it observed
+  nothing.
+
 ## 0.13.9
 
 - **The README's own image was missing.** Both READMEs open with

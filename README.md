@@ -273,15 +273,34 @@ running app actually loaded.
 ```sh
 $ dsh-plugin audit --host http://127.0.0.1:54133
 dsh-aiignore           0.37.1    loaded       ok
-demo-panel             0.3.0     not loaded   1 problem: root export
-                                                    root export: the root export index.js does not export apply, so the loader imports the package and mounts nothing
+demo-panel             0.3.0     not loaded   ok  — dsh.profile.bundles in /Users/me/.dsh/profiles/desktop/package.json does not list it, and the loader mounts only listed bundles
+                                            fix: add "demo-panel" to dsh.profile.bundles in /Users/me/.dsh/profiles/desktop/package.json (or run `dsh plugin add demo-panel`), then restart the app
 
-1 installed plugin(s) are not in the running app; restart the app once after installing.
+1 installed plugin(s) are not in the running app:
 ```
+
+"Not loaded" has three different causes, and `audit` names the one that applies
+instead of offering a blanket restart:
+
+- **Not in `dsh.profile.bundles`.** `pnpm add` (or `npm install`) installs the
+  package but does not tell the loader to mount it. Add the package name to
+  `dsh.profile.bundles` in `~/.dsh/profiles/<profile>/package.json`, or run
+  `dsh plugin add <name>`, then restart the app.
+- **No `dsh.bundle`.** The package declares `dsh` but no patch file to mount.
+  Add `dsh.bundle.patch` to its `package.json` and ship the patch file, then
+  reinstall.
+- **Listed, but the app predates the install.** The profile is already correct;
+  restart the app once to read the new list.
 
 Advisories (`engines.dsh`, README Requirements) are counted apart from problems:
 the market index needs them, the loader does not, so they should not bury a plugin
 that is actually broken.
+
+`audit` exits `1` when an installed plugin has a hard failure **or** when the
+running app did not load at least one installed plugin, so CI can gate on a
+profile where the app silently skipped a plugin. It exits `0` when every
+installed plugin is loaded and valid. If no graph was read (`--host` omitted),
+the loaded column is `?` and only hard failures change the exit code.
 
 Without `--host` the loaded column is `?`, because guessing would be worse than
 saying nothing. Only packages that declare a `dsh` field are audited — the rest of
@@ -473,7 +492,7 @@ merged
 | Code | Meaning |
 | --- | --- |
 | 0 | Done, or nothing to complain about |
-| 1 | A check failed, or the release stopped (the failing stage is named) |
+| 1 | A check failed, an installed plugin was not loaded by the running app, or the release stopped (the failing stage is named) |
 | 2 | Unknown command |
 
 ## What is not here yet

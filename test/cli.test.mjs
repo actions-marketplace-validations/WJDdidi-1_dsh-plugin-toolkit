@@ -46,3 +46,13 @@ test('a dry run shows the sequence and never tags anything', async () => {
   assert.match(output, /Create the tag plugin-v1\.2\.3/);
   assert.match(output, /Wait until the registry serves demo-plugin@1\.2\.3/);
 });
+
+test('--home is a flag the parser knows, and it takes the value after it', async () => {
+  // `audit --home <dir>` used to throw `args is not defined` before it ever
+  // reached the audit: the flag reader named the wrong variable.
+  const io = recorder();
+  const home = path.join(here, '..', 'fixtures', 'empty-home');
+  const code = await run(['audit', '--home', home, '--timeout', '50'], io);
+  assert.equal(typeof code, 'number');
+  assert.doesNotMatch(io.lines.join('\n'), /args is not defined/u);
+});
