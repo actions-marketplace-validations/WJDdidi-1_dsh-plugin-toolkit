@@ -1,3 +1,12 @@
+## 0.13.13
+
+- **`explain --log <file>` reads the log the hub points at.** A report names
+  `~/.dsh/logs/…` instead of a pasteable sentence, so the reader had to open the
+  file first. `--log` scans it from the bottom, explains the last line that
+  matches a known cause, and prints the same cause, check and fix as pasted
+  text. A log with no known cause exits 2 and lists what it looked for; a file
+  that cannot be read exits 2 with its path.
+
 ## 0.13.12
 
 - **`explain` maps a pasted install error to the check that finds its cause.**
@@ -7,12 +16,6 @@
   prints the cause, the `doctor` check that verifies it and the fix; given a
   checkout it runs that check and reports whether it actually fails. Unknown
   text exits 2 rather than guessing.
-- **`explain --log <file>` reads the log the hub points at.** A report names
-  `~/.dsh/logs/…` instead of a pasteable sentence, so the reader had to open the
-  file first. `--log` scans it from the bottom, explains the last line that
-  matches a known cause, and prints the same cause, check and fix as pasted
-  text. A log with no known cause exits 2 and lists what it looked for; a file
-  that cannot be read exits 2 with its path.
 - **The publish job names the tarball as a path, not as a GitHub shorthand.**
   `npm publish dist/*.tgz` resolved to `ssh://git@github.com/dist/…tgz.git` and
   died with `Permission denied (publickey)` after the artifact had downloaded
