@@ -1,0 +1,120 @@
+name: publish
+
+# A release is a tag that says which version it is. Nothing else publishes.
+on:
+  push:
+    tags:
+      - 'plugin-v*'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Build, pack and smoke-test only; publish nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# One publish at a time per tag, and never cancel a publish halfway through.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: build, test, pack, smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: the tag and package.json must agree
+        if: startsWith(github.ref, 'refs/tags/plugin-v')
+        run: |
+          tag="${GITHUB_REF_NAME#plugin-v}"
+          declared="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$declared" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json $declared"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: unit and integration tests
+        run: npm test
+
+      - run: node --check bin/dsh-plugin.mjs
+
+      - name: repository, secrets and pack list
+        run: node scripts/publish-preflight.mjs
+
+      - name: build the tarball that will be published
+        run: |
+          mkdir -p dist
+          npm pack --pack-destination dist
+
+      - name: install the tarball in a clean directory and smoke it
+        run: node scripts/publish-smoke.mjs dist/*.tgz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: dist/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish to npm with provenance
+    needs: verify
+    # Publishing needs a tag, and a dispatch only publishes when it says so.
+    if: >-
+      startsWith(github.ref, 'refs/tags/plugin-v') &&
+      (github.event_name == 'push' || inputs.dry-run == false)
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs an npm that speaks OIDC.
+      - name: an npm that can do trusted publishing
+        run: |
+          npm install --global npm@^11.5.1
+          npm --version
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball
+          path: dist
+
+      - name: the registry must not already have this version
+        run: node scripts/publish-guard.mjs
+
+      # `npm publish dist/x.tgz` is read as the GitHub shorthand dist/x.tgz and
+      # fails with "Permission denied (publickey)"; the ./ makes it a path.
+      - name: exactly one tarball reached this job
+        run: |
+          set -euo pipefail
+          count=$(ls dist/*.tgz | wc -l | tr -d ' ')
+          test "$count" = "1" || { echo "expected one tarball in dist, found $count"; exit 1; }
+          ls -l dist/*.tgz
+
+      - name: publish the verified tarball
+        run: npm publish ./dist/*.tgz --provenance --access public
+
+      - name: the registry serves it, and a clean install works
+        run: |
+          node scripts/publish-registry.mjs \
+            "$(node -p "require('./package.json').name")" \
+            "$(node -p "require('./package.json').version")"

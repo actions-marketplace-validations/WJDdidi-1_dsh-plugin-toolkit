@@ -1,3 +1,28 @@
+## 0.13.12
+
+- **`explain` maps a pasted install error to the check that finds its cause.**
+  A plugin hub files failed installs back into each plugin's repository; 61
+  repositories were carrying those reports on 2026-11-02, and every one opens
+  with one of four sentences that name no file. `dsh-plugin explain "<error>"`
+  prints the cause, the `doctor` check that verifies it and the fix; given a
+  checkout it runs that check and reports whether it actually fails. Unknown
+  text exits 2 rather than guessing.
+- **`explain --log <file>` reads the log the hub points at.** A report names
+  `~/.dsh/logs/…` instead of a pasteable sentence, so the reader had to open the
+  file first. `--log` scans it from the bottom, explains the last line that
+  matches a known cause, and prints the same cause, check and fix as pasted
+  text. A log with no known cause exits 2 and lists what it looked for; a file
+  that cannot be read exits 2 with its path.
+- **The publish job names the tarball as a path, not as a GitHub shorthand.**
+  `npm publish dist/*.tgz` resolved to `ssh://git@github.com/dist/…tgz.git` and
+  died with `Permission denied (publickey)` after the artifact had downloaded
+  correctly; `npm publish ./dist/*.tgz` is the same file read as a path. A step
+  now fails loudly if `dist` does not hold exactly one tarball.
+- **The publish guard test states the tag it is testing.** It inherited
+  `GITHUB_REF_NAME` from the workflow, so it passed on pull requests and failed
+  on the release tag it exists to protect — the tag run exported
+  `plugin-v0.13.12` while the scratch manifest said `99.99.99`.
+
 ## 0.13.11
 
 - `--home` is readable again: the flag reader named the wrong variable, so `dsh-plugin audit --home <dir>` failed with `args is not defined` before it ran.

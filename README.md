@@ -390,6 +390,52 @@ do the download.
 
 Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged.
 
+## When an install fails
+
+A plugin hub files failed installs back into the plugin's repository, and the
+report always opens with the same sentence — `plugin install failed`,
+`plugin distribution incomplete`, `plugin does not support the DSH version in
+use`, `failed to apply loader entry`. None of them names a file, so the author
+is left reading a symptom. Paste the sentence and get the cause:
+
+```sh
+$ npx dsh-plugin-toolkit explain "dsh: installation rejected: Plugin my-panel@1.0.0 is incompatible with dsh 0.2.1-rc.5"
+dsh-plugin explain: 1 known cause(s)
+  cause: engines.dsh is missing, or the range it declares excludes the host doing the install
+  symptom: the installer rejects the plugin before unpacking it
+  check: engines.dsh
+  fix: declare the range you actually support: "engines": { "dsh": ">=0.2.0" }
+```
+
+When the report gives you a log path such as `logs: ~/.dsh/logs/…` instead of
+a sentence, point `--log` at the file. It reads the log and explains the last
+line that matches a known cause, so the installer's generic first line does not
+hide the specific one underneath it:
+
+```sh
+$ npx dsh-plugin-toolkit explain --log ~/.dsh/logs/install.log
+dsh-plugin explain: 1 known cause(s)
+  cause: two plugins register the same id or slot, so the second one cannot apply
+  symptom: the plugin is installed but the loader refuses its entry
+  check: patch file
+  fix: give the row in cordis.patch.yml a unique id, and do not re-register a slot another plugin owns
+```
+
+Add the checkout and it also tells you whether that check actually fails there:
+
+```sh
+$ npx dsh-plugin-toolkit explain "plugin install failed" ./my-panel
+...
+  in ./my-panel: ✗ engines.dsh: engines.dsh is missing, so the market index cannot state the host requirement
+```
+
+The same checkout argument works after the log:
+`dsh-plugin explain --log ~/.dsh/logs/install.log ./my-panel`.
+
+Text it does not recognise exits `2` instead of guessing: a wrong diagnosis
+sends you editing the wrong file. A log with no known cause also exits `2` and
+lists the causes it looked for.
+
 ## Prove the tarball works, not just the repository
 
 `doctor` reads your working copy. Users install the tarball, and a `files` list can ship everything except the panel — `doctor` will not notice.
