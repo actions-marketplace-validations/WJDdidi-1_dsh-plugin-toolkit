@@ -78,8 +78,12 @@ test('the installed tarball runs the benchmark the README cites', () => {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // The benchmark prints the path it read through `path.relative`, which uses
+    // backslashes on Windows; compare after normalising so the assertion is about
+    // "it read the shipped list", not about the separator of the day.
+    const flat = output.split('\\').join('/');
     assert.ok(
-      output.includes(`benchmark: ${BENCHMARK_LIMIT} repositories from ${listPath}`),
+      flat.includes(`benchmark: ${BENCHMARK_LIMIT} repositories from ${listPath}`),
       `\`${documentedCommand}\` in the installed tarball did not read ${listPath}:\n${output}`,
     );
     assert.match(output, new RegExp(`after\\s+--jobs ${DEFAULT_JOBS}\\b`, 'u'));

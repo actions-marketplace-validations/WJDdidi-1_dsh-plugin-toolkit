@@ -961,9 +961,10 @@ Honest list, so nobody plans around a feature that does not exist:
 ## Changelog
 
 [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release, including
-the `0.19.0` batch audit: `--jobs` reads several repositories at once, a
-rate-limited read stops the batch instead of failing the rest of the list, and
-the measured throughput is reproducible with `npm run benchmark`.
+the `0.20.0` compatibility answer: `audit --remote --host` says whether a
+plugin installs on the DSH you run, `fix --host` aims the repair at that host,
+and `npm run benchmark` works from the published tarball as well as from a
+checkout.
 
 ## License
 

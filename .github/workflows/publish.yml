@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 # One publish at a time per tag, and never cancel a publish halfway through.
 concurrency:
@@ -59,6 +60,16 @@ jobs:
 
       - name: install the tarball in a clean directory and smoke it
         run: node scripts/publish-smoke.mjs dist/*.tgz
+
+      # 0.20.0 was published while the same commit's Windows and macOS jobs were
+      # failing: this job only ever ran on ubuntu, so "tests pass" meant "tests
+      # pass here". Ask GitHub about the commit itself before anything ships.
+      - name: the commit this tag points at passed its CI
+        if: startsWith(github.ref, 'refs/tags/plugin-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/publish-ci-gate.mjs "${{ github.repository }}" "${{ github.sha }}"
 
       - uses: actions/upload-artifact@v4
         with:

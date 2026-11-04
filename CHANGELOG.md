@@ -1,4 +1,4 @@
-## Unreleased
+## 0.20.0
 
 - **The README answers "will this plugin install on my DSH?" with a real
   incompatible plugin and its real output.** The new section runs

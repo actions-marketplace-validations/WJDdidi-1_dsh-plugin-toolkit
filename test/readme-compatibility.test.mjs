@@ -14,7 +14,9 @@ import { fileURLToPath } from 'node:url';
 import { HELP } from '../lib/cli.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+// A Windows checkout writes README.md with CRLF; normalise before matching so the
+// heading regex (which expects `\n` right after the title) works on every platform.
+const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8').replace(/\r\n/gu, '\n');
 
 function compatibilitySection() {
   const match = /^### Will this plugin install on my DSH\?\n([\s\S]*?)(?=^### |^## )/mu.exec(README);
