@@ -1,3 +1,111 @@
+## 0.19.0
+
+- **A rate-limited batch audit stops and says so.** When GitHub answers `403`
+  or `429` for any read, the audit stops starting new repositories and reports
+  every entry it could not read as `rate-limited`, never as `clean` or
+  `unreadable`. The reset time from `x-ratelimit-reset` (or `retry-after`) is
+  printed in the verdict, `--json` findings carry `rateLimited: true` with a
+  `rateLimit` object, and the summary counts them separately, so one exhausted
+  quota no longer spends the rest of the list on identical failures.
+- **`dsh-plugin audit --remote --from <file> --jobs <n>` reads several
+  repositories at once.** The default is four, the hard ceiling is eight, and a
+  value above the ceiling is capped rather than turned into a burst of GitHub
+  requests. Output and `--json` findings keep the input order, and every verdict
+  matches the sequential run; `--jobs 1` restores the old one-at-a-time timing.
+  A non-numeric, zero or missing value is refused with exit `2` instead of
+  quietly becoming the default.
+- **The README records the measured batch throughput.** The first eight
+  repositories from the 3 November install-failure list are replayed through a
+  fixed-latency harness, so the measurement is reproducible instead of
+  depending on GitHub's response time: 1.003 s per repository with `--jobs 1`
+  and 0.251 s with the default `--jobs 4`. `npm run benchmark` runs the same
+  list again, and a test reads the README table to keep it tied to the default
+  `--jobs` value.
+
+## 0.18.1
+
+- **A `~` at the start of `--patch`, `--patch-dir` or `--from` expands to your
+  home directory.** The documented example is `--patch ~/repair.patch`, and on
+  Windows `cmd`/PowerShell leave the tilde alone, so the file was written to a
+  directory literally named `~` inside the current working directory. Both
+  `~/x` and the Windows spelling `~\x` now resolve to the same place, `~` on
+  its own is the home directory, and paths without a leading tilde are left
+  exactly as written. Found while auditing the batch commands on a Windows
+  shell; the tests cover both separator spellings.
+
+## 0.18.0
+
+- **`dsh-plugin audit --remote --from <file>` audits the whole list at once.**
+  It reads one `owner/repo` per line (or `-` for standard input), asks the
+  read-only GitHub contents API about every entry, and prints one line per
+  repository with its verdict: `clean`, `failing`, or `unreadable`. A counted
+  summary follows, `--json` still prints the existing finding array, and the
+  command exits `1` when anything is failing or unreadable and `0` only when
+  every repository is clean. A repository GitHub could not read is reported as
+  unreadable instead of being counted as a pass, and the same `--from` accepts
+  the JSON evidence shape (an array, or an object with `rows`) that the old
+  shell loop printed.
+- **`dsh-plugin audit --remote --from <file> --patch-dir <dir>` writes the
+  repairs, one file per repository.** The directory is created even when there
+  is nothing to fix, each patch is named `owner__repo.patch`, and only a
+  repository with a failing `engines.dsh` gets a file; clean and unreadable
+  repositories leave none. The diff is the one `fix --remote --patch` would
+  write, it reuses the `package.json` the audit already read, and the remote is
+  still read-only. `--force` replaces an existing patch.
+- **The README shows the batch audit on the 3 November install-failure list.**
+  The list itself is checked in at `docs/ecosystem-audit-2026-11-03.txt`; the
+  README runs one command over it, pastes the real per-repository output and
+  summary, and shows a maintainer how to clone one of the named repositories
+  and apply its generated patch with `git apply --check` and `git apply`.
+
+## 0.17.0
+
+- **`dsh-plugin fix <owner>/<repo> --remote` prints the `engines.dsh` repair
+  for a repository you have not cloned.** It reads `package.json` through the
+  GitHub API and shows the edit the local fixer would make as a unified diff;
+  the only GitHub request is a read-only GET, and nothing is written. The
+  target may come before or after `--remote`, and `--write` is refused because
+  the repository is remote.
+- **`dsh-plugin fix <owner>/<repo> --remote --patch <file>` saves that diff for
+  a checkout.** Parent directories are created, the printed path names where
+  it landed, and an existing file is left alone unless `--force` is passed.
+  `--dry-run` reports the path without writing it. The repository itself is
+  still never modified.
+- **The README documents the remote repair loop.** A new *Repair a repository
+  you have not cloned* section walks from `doctor --remote` through
+  `fix --remote`, `--patch`, `git apply --check` and `doctor .`; `docs/repair.md`
+  links the same flow.
+
+## 0.16.0
+
+- **`dsh-plugin doctor --fix <dir>` turns the failing checks into a repair
+  plan.** It prints one line per failed check naming the file and the edit it
+  would make, writes nothing unless `--write` is passed, applies exactly the
+  planned edits, and runs `doctor` again to report what remains. A missing or
+  non-range `engines.dsh` is the automatic edit; checks that need real file
+  contents (a patch file, a client bundle, a root export) stay visible as
+  `manual:` lines instead of being guessed. `--range` chooses the host range and
+  `--dry-run` wins over `--write`. The existing `fix --engines` command is
+  unchanged.
+- **`dsh-plugin audit --remote owner/repo,owner/repo --json` audits a list and
+  prints one machine-readable object per repository.** Each object carries
+  `target`, `version`, `hostRange`, `failures` (`{ check, message }`) and
+  `notes`; the command exits `1` as soon as any repository has a failure. A
+  rate-limited or otherwise unreadable request becomes a note and still exits
+  `1`, so a repository the tool could not read is never mistaken for a clean
+  one. `--remote` also accepts repeated flags, and without `--json` the same
+  findings print as the human lines `doctor --remote` already uses.
+- **`docs/repair.md` is a repair guide with one section per `doctor` check.** It
+  shows the exact line each check prints, what the check protects and the
+  smallest edit that clears it, and the README links it from *When an install
+  fails*. The loop starts with `doctor --fix . --write` for the automatic
+  `engines.dsh` edit and ends when `doctor` exits `0`.
+- **The README now says where a write can come from.** `doctor` on its own stays
+  read-only and its checks are unchanged; `fix` and `doctor --fix` change the
+  manifest only when `--write` is passed.
+- **Published as `dsh-plugin-toolkit@0.16.0`.** The release tag is
+  `plugin-v0.16.0`, and the registry serves that version.
+
 ## 0.15.0
 
 - **`dsh-plugin fix <dir> --engines` writes the host range `doctor` asks for.**

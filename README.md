@@ -48,9 +48,10 @@ $ dsh plugin add dsh-plugin-toolkit
 
 [`init`](#start-from-a-plugin-that-already-passes) writes the files whose absence shows up as a failed first publish — `engines.dsh`, the patch file, a `files` list that ships the code, a client bundle, a test for it, and the CI that runs both. `doctor` then checks the same things without writing anything, and [`verify`](#prove-the-tarball-works-not-just-the-repository) checks the tarball instead of the working copy.
 
-If a plugin already exists and only lacks the host range, `doctor` names it and
-`npx dsh-plugin-toolkit@latest fix . --engines --write` writes the range after
-showing it.
+If a plugin already exists, `doctor --fix` turns the failing checks into a
+repair plan. It names the file and the edit for every problem, writes nothing
+until you add `--write`, and then runs the checks again. `fix --engines` is
+still there when the host range is the only thing you need to change.
 
 ```sh
 npx dsh-plugin-toolkit@latest init ./my-panel --name my-panel
@@ -404,6 +405,173 @@ What it can see, and what it cannot:
 - Public repositories work anonymously, but GitHub allows 60 requests an hour.
   Export `GH_TOKEN` (or `GITHUB_TOKEN`) to audit more than one or two.
 
+To check a whole list in one pass, put one `owner/repo` per line in a file and
+pass it with `--from` (`-` reads standard input):
+
+```sh
+$ dsh-plugin audit --remote --from repos.txt
+```
+
+Repositories are read four at a time by default. `--jobs N` changes that width;
+values above `8` are capped at `8`, and `--jobs 1` walks the list one repository
+at a time, the timing the command had before batching. The output — and the
+`--json` array — still follows the input list, and every verdict is the one the
+sequential run produced, so a diff between two runs compares repositories rather
+than scheduling.
+
+When GitHub answers `403` or `429`, the shared quota is gone, so the batch stops
+starting new repositories and marks every entry it could not read as
+`rate-limited` instead of `clean` or `unreadable`. If the response carries
+`x-ratelimit-reset` (or `retry-after`), the reset time is printed with the
+verdict, and the remaining entries are reported without another request.
+
+Each repository gets one line with its verdict — `clean`, `failing`,
+`unreadable`, or `rate-limited` — and the run ends with a counted summary:
+
+```text
+clean         demo/plugin  1.2.3 (host >=0.2.0)
+failing       demo/broken  — engines.dsh: engines.dsh is missing, so a host that enforces the range rejects the install as "incompatible with dsh"
+rate-limited  demo/blocked — GitHub rate-limited this request (403) for package.json; set GH_TOKEN or GITHUB_TOKEN to raise the limit; the limit resets at 2026-11-04T20:00:00.000Z
+rate-limited  demo/next    — GitHub rate-limited the batch before this repository was read, so it was not requested; the limit resets at 2026-11-04T20:00:00.000Z
+
+summary: 4 repositories — 1 clean, 1 failing (1 problem), 0 unreadable, 2 rate-limited
+```
+
+The command exits `1` when any repository is failing, unreadable, or
+rate-limited, and `0` only when every repository in the list is clean. `--from`
+also accepts the JSON evidence shape (an array, or an object with `rows`) that
+the old shell loop printed, so an existing audit file can be replayed without
+rewriting it.
+
+### Measured throughput
+
+The measurement uses the first eight repositories from the 3 November
+install-failure list — `610la/dsh-notification-center`,
+`Anionex/dsh-vision-toolkit`, `ChongCyrus/Vibe-Mathematics`,
+`CrazyShout/dsh-ssh-remote`, `Ebony-Vinyl/dsh-our-free-model`,
+`FSMargoo/dsh-at-file`, `FylarOpen/dsh-fylar-office-editor` and
+`GraySilver/dsh-evolve-modes` — served from memory with a fixed 500 ms delay on
+every API request. That makes the number reproducible on any host: it measures
+the batch's scheduling, not GitHub's mood. Reproduce it with:
+
+```sh
+$ npm run benchmark
+```
+
+(`node scripts/benchmark-audit.mjs` runs the same harness without npm's banner.)
+It runs the same list twice: `--jobs 1`, which is the loop the command used
+before batching, and the default `--jobs 4`. Measured on this host:
+
+| run | wall clock | seconds per repository |
+| --- | --- | --- |
+| before (`--jobs 1`) | 8.03 s | 1.003 s |
+| after (default `--jobs 4`) | 2.01 s | 0.251 s |
+
+The after run keeps four reads in flight, so eight repositories finish in two
+waves and the per-repository cost falls from about 1.00 s to about 0.25 s. The
+test suite reads this table and fails if the after number no longer matches the
+default `--jobs` value, so changing the default cannot leave the claim behind.
+
+For a CI job or a repair sweep, add `--json`:
+
+```sh
+$ dsh-plugin audit --remote --from repos.txt --json
+```
+[
+  {
+    "target": "V1ki/dsh-plugin-subscriptions",
+    "version": "0.3.0",
+    "hostRange": ">=0.2.0",
+    "failures": [],
+    "notes": []
+  },
+  {
+    "target": "demo/plugin",
+    "version": "1.2.3",
+    "hostRange": null,
+    "failures": [
+      {
+        "check": "engines.dsh",
+        "message": "engines.dsh is missing, so a host that enforces the range rejects the install as \"incompatible with dsh\"; declare the range you support, e.g. \"engines\": { \"dsh\": \">=0.2.0\" }"
+      }
+    ],
+    "notes": []
+  }
+]
+```
+
+Every repository produces one object with `target`, `version`, `hostRange`,
+`failures` (`{ check, message }`) and `notes`, and the command exits `1` when any
+repository has a problem. A rate-limited repository adds `rateLimited: true`
+and a `rateLimit` object with the HTTP `status` and, when GitHub sent one,
+`resetAt`; it is not marked `unreadable`. A network error is printed in `notes`
+and still exits `1`: a repository the tool could not read is never reported as
+clean. Packages that build before they pack
+keep their file-level checks in `notes` as before.
+
+When the list is a repair queue rather than a report, add `--patch-dir`:
+
+```sh
+$ dsh-plugin audit --remote --from repos.txt --patch-dir repairs/
+```
+
+It creates the directory and writes one `owner__repo.patch` for every
+repository whose `engines.dsh` check fails, with the same diff `fix --remote
+--patch` produces. Repositories that are clean, unreadable, or need a repair
+the tool cannot make automatically are skipped. The repository itself is still
+only read, and `--force` replaces a patch that is already there.
+
+### The 3 November list
+
+The install-failure audit that started this tool covers 67 repositories. Its
+list is checked in as
+[`docs/ecosystem-audit-2026-11-03.txt`](https://github.com/WJDdidi-1/dsh-plugin-toolkit/blob/main/docs/ecosystem-audit-2026-11-03.txt),
+one `owner/repo` per line. One command audits all of it and leaves the repairs
+in `/tmp/repairs`:
+
+```sh
+$ dsh-plugin audit --remote --from docs/ecosystem-audit-2026-11-03.txt --patch-dir /tmp/repairs
+```
+
+A real run. The rows in the middle are elided; the summary is exactly what the
+command printed:
+
+```text
+failing     610la/dsh-notification-center  — engines.dsh: engines.dsh is missing, so a host that enforces the range rejects the install as "incompatible with dsh"; declare the range you support, e.g. "engines": { "dsh": ">=0.2.0" }
+failing     Anionex/dsh-vision-toolkit  — engines.dsh: engines.dsh is missing, so a host that enforces the range rejects the install as "incompatible with dsh"; declare the range you support, e.g. "engines": { "dsh": ">=0.2.0" }
+...
+clean       HERO476/dsh-sidecard-ask  2.1.11 (host >=0.1.2-rc.1 <0.3.0)
+...
+summary: 67 repositories — 7 clean, 60 failing (60 problems), 0 unreadable
+58 patches written to /tmp/repairs
+```
+
+The exit code is `1` because 60 of the 67 still need an edit. The evidence file
+the list came from was written on 3 November with 6 clean and 59 missing
+`engines.dsh`; one repository has since added the field, which is why this run
+shows 7 clean and 58 missing. Two repositories no longer have a root
+`package.json`, so the tool reports that instead of guessing at a repair.
+
+Each patch file is named after the repository, so the one for
+`PrismLean/dsh-run-guard` is
+`/tmp/repairs/PrismLean__dsh-run-guard.patch`. To apply it, clone the
+repository and apply the file in the checkout:
+
+```sh
+$ git clone https://github.com/PrismLean/dsh-run-guard /tmp/dsh-run-guard
+$ cd /tmp/dsh-run-guard
+$ git apply --check /tmp/repairs/PrismLean__dsh-run-guard.patch
+$ git apply /tmp/repairs/PrismLean__dsh-run-guard.patch
+$ npx dsh-plugin-toolkit@latest doctor .
+```
+
+`git apply --check` is the dry run; it changes nothing and exits non-zero before
+writing if `package.json` moved since the audit. If that happens, run `fix
+<owner>/<repo> --remote --patch` to regenerate the diff from the current
+default branch. [Repair a repository you have not
+cloned](#repair-a-repository-you-have-not-cloned) below shows the same loop with
+the diff in the terminal.
+
 ## What `doctor` checks
 
 | Check | Why it matters |
@@ -419,9 +587,44 @@ What it can see, and what it cannot:
 
 Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged.
 
+## Repair what `doctor` finds
+
+`doctor --fix` reads the same checks and prints one line per failed check: the
+file, and the edit it would make. It is a preview by default and writes nothing
+until you pass `--write`:
+
+```sh
+$ npx dsh-plugin-toolkit@latest doctor --fix ./my-panel
+dsh-plugin doctor --fix: 1 failed check(s) in /Users/you/my-panel
+  ✗ engines.dsh: package.json — would write engines.dsh ">=0.2.0" (was missing)
+nothing written; pass --write to apply
+dsh-plugin doctor --fix: 1 problem(s) remain in /Users/you/my-panel
+  ✗ engines.dsh: engines.dsh is missing, so the market index cannot state the host requirement
+
+$ npx dsh-plugin-toolkit@latest doctor --fix ./my-panel --write
+dsh-plugin doctor --fix: 1 failed check(s) in /Users/you/my-panel
+  ✗ engines.dsh: package.json — would write engines.dsh ">=0.2.0" (was missing)
+dsh-plugin doctor --fix: wrote engines.dsh ">=0.2.0" in package.json
+ok  my-panel@1.0.0 (host >=0.2.0)
+```
+
+The write is limited to the edits in the plan: a missing or non-range
+`engines.dsh` becomes `>=0.2.0`, the other `engines` entries are left in place,
+and a range that already passes is not touched. `--range <range>` chooses the
+value used when `engines.dsh` needs repair, and `--dry-run` wins if it is passed
+alongside `--write`.
+
+Checks that cannot be repaired without guessing — a missing patch file, a root
+export that points at the CLI, a README with no Requirements section — still
+appear in the plan with `manual:`, so the command never invents file contents.
+After writing, `doctor` runs again: the exit code is `0` only when no problem
+remains, and the remaining failures are printed with their usual messages. Run
+it per repository; a checkout is the only thing it edits, never a published
+package or the market index.
+
 ## Fix a missing host range
 
-`doctor` names a missing `engines.dsh`, but it never edits the manifest for you.
+`doctor` on its own names a missing `engines.dsh` but never edits the manifest.
 `fix --engines` prints the range it would write, and writes it only when you
 also pass `--write`:
 
@@ -440,9 +643,77 @@ A missing value, or one `doctor` calls "not a semver range", becomes `>=0.2.0` �
 same range `init` writes. A range that already passes the check is left alone,
 because `>=0.3.0` can be a deliberate statement about the host APIs the plugin
 uses; `--range <range>` asks for a different one explicitly. `fix` changes only
-`engines.dsh` and leaves the other `engines` entries in place. `doctor` itself
-still runs read-only, and its checks are unchanged; `fix` changes the manifest
-only when you pass `--write`.
+`engines.dsh` and leaves the other `engines` entries in place. `doctor` on its
+own still runs read-only, and its checks are unchanged; `fix` and `doctor --fix`
+change the manifest only when you pass `--write`.
+
+For a repository you have not cloned, see
+[Repair a repository you have not cloned](#repair-a-repository-you-have-not-cloned):
+`fix <owner>/<repo> --remote` fetches `package.json` through the GitHub API and
+prints the same `engines.dsh` diff, and `--patch <file>` saves it for a
+checkout.
+
+## Repair a repository you have not cloned
+
+Start from the repository name in the hub issue: `PrismLean/dsh-run-guard`, one
+of the repositories in the 3 November install-failure audit. You do not need a
+checkout to learn what is wrong. `doctor --remote` reads `package.json` and the
+files it points at through the GitHub API and prints the same verdict it would
+give a folder:
+
+```sh
+$ npx dsh-plugin-toolkit@latest doctor --remote PrismLean/dsh-run-guard
+dsh-plugin doctor: 1 problem(s) in PrismLean/dsh-run-guard
+  ✗ engines.dsh: engines.dsh is missing, so a host that enforces the range rejects the install as "incompatible with dsh"; declare the range you support, e.g. "engines": { "dsh": ">=0.2.0" }
+```
+
+That is still only a verdict. `fix <owner>/<repo> --remote` reads the same
+manifest and prints the edit as a unified diff against `package.json`; it sends
+only a GET to GitHub and writes nothing:
+
+```sh
+$ npx dsh-plugin-toolkit@latest fix PrismLean/dsh-run-guard --remote
+dsh-plugin fix: would write engines.dsh ">=0.2.0" (was missing) in PrismLean/dsh-run-guard
+--- a/package.json
++++ b/package.json
+@@ -53,5 +53,8 @@
+     "@deepseek-ai/schemastery": "~3.18.4",
+     "react": "^18.3.1",
+     "react-dom": "^18.3.1"
++  },
++  "engines": {
++    "dsh": ">=0.2.0"
+   }
+ }
+    remote repositories are read-only; nothing written; apply this diff in your checkout
+```
+
+To apply it, clone the repository, save that diff with `--patch`, and apply it
+in the checkout:
+
+```sh
+$ git clone https://github.com/PrismLean/dsh-run-guard
+$ cd dsh-run-guard
+$ npx dsh-plugin-toolkit@latest fix PrismLean/dsh-run-guard --remote --patch /tmp/dsh-run-guard-engines.patch
+$ git apply --check /tmp/dsh-run-guard-engines.patch
+$ git apply /tmp/dsh-run-guard-engines.patch
+```
+
+`--patch` creates parent directories and refuses to replace an existing file
+unless you pass `--force`; its output names the file, and the repository it read
+is still untouched. `git apply --check` is the dry run: it fails before changing
+anything if the manifest moved since the diff was printed. Commit the applied
+change as you would any other edit.
+
+Then run `npx dsh-plugin-toolkit@latest doctor .` in the checkout. A checkout
+also reads the README text, so it can name a follow-up the remote read could
+not see — for `PrismLean/dsh-run-guard`, the README still has no Requirements
+section. [Repair a failed
+install](https://github.com/WJDdidi-1/dsh-plugin-toolkit/blob/main/docs/repair.md#readme)
+has the smallest edit for each remaining line. Once the branch is pushed,
+`doctor --remote PrismLean/dsh-run-guard` no longer reports `engines.dsh`. If
+the diff does not apply because the file changed, run the remote fixer again —
+it always starts from the current `package.json`.
 
 ## When an install fails
 
@@ -450,7 +721,10 @@ A plugin hub files failed installs back into the plugin's repository, and the
 report always opens with the same sentence — `plugin install failed`,
 `plugin distribution incomplete`, `plugin does not support the DSH version in
 use`, `failed to apply loader entry`. None of them names a file, so the author
-is left reading a symptom. Paste the sentence and get the cause:
+is left reading a symptom. [Repair a failed install](https://github.com/WJDdidi-1/dsh-plugin-toolkit/blob/main/docs/repair.md) has one
+section per `doctor` check, with the exact line it prints and the smallest edit
+that clears it; `doctor --fix . --write` applies the `engines.dsh` edit for you
+and re-runs the checks. Paste the sentence and get the cause:
 
 ```sh
 $ npx dsh-plugin-toolkit explain "dsh: installation rejected: Plugin my-panel@1.0.0 is incompatible with dsh 0.2.1-rc.5"
@@ -607,6 +881,13 @@ Honest list, so nobody plans around a feature that does not exist:
 - **No check against a running app.** `verify` mounts the installed bundle in Node with a stubbed host. It cannot prove the panel appears in a real sidebar — only that the code the tarball ships renders.
 - **`dev --host` is not covered by CI.** The unit tests use a synthetic event stream; the live path is exercised by hand against a running app, on macOS only.
 - **No Windows testing of the `dev` file watcher.** The Windows CI job runs the whole suite, but the watcher is only asserted against a temp directory, not a real profile.
+
+## Changelog
+
+[`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release, including
+the `0.19.0` batch audit: `--jobs` reads several repositories at once, a
+rate-limited read stops the batch instead of failing the rest of the list, and
+the measured throughput is reproducible with `npm run benchmark`.
 
 ## License
 
