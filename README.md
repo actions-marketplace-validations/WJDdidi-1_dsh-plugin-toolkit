@@ -425,6 +425,57 @@ starting new repositories and marks every entry it could not read as
 `x-ratelimit-reset` (or `retry-after`), the reset time is printed with the
 verdict, and the remaining entries are reported without another request.
 
+### Will this plugin install on my DSH?
+
+The seven compatibility reports all end with the same question. Add `--host
+<version>` to a remote audit and it answers that question for one repository.
+This is a real run against `L3n3L/dsh-resume`, a plugin whose declared range
+stops before DSH 0.2.0, checked against the `0.2.2-alpha.3` canary from the
+reports:
+
+```sh
+$ dsh-plugin audit --remote L3n3L/dsh-resume --host 0.2.2-alpha.3
+incompatible  L3n3L/dsh-resume  0.1.3 (host >=0.1.0-rc.6 <0.2.0-0) [incompatible with dsh 0.2.2-alpha.3; declares ">=0.1.0-rc.6 <0.2.0-0"]
+
+summary: 1 repository — 0 clean, 1 failing (1 problem), 0 unreadable, 0 rate-limited
+```
+
+The verdict comes first: `incompatible` means the range in `package.json` does
+not accept the host, so the installer rejects the plugin before it unpacks it.
+This run exits `1`. The same answer is reproducible without a GitHub request —
+the manifest is checked in under `examples/compatibility-sample/`, and this
+command feeds it through the real CLI path:
+
+```sh
+$ node scripts/compatibility-sample.mjs
+```
+
+(`npm run compatibility` runs the same script.) The test suite runs that
+command and compares its output with the block above, so the sample cannot
+drift from the formatter or from the README.
+
+The line carries the range `package.json` declares and one of `compatible`,
+`incompatible`, or `unknown` against that host version. `unknown` is the honest
+answer for a missing or malformed range — there is nothing to compare — while a
+range that excludes the host is `incompatible`, counted as failing, and exits
+`1`. The same flag works in the batch mode, so one `--from` run answers the
+whole list:
+
+```sh
+$ dsh-plugin audit --remote --from repos.txt --host 0.2.2-alpha.3
+```
+
+The compatibility flags are `--remote <owner/repo>` for one repository,
+`--from <file>` for a list (`-` reads standard input), `--host <version>` for
+the DSH version to compare against, and `--json` for the machine-readable
+finding. `--jobs <n>` sets the batch width, and `--patch-dir <dir>` writes the
+host-targeted repair for each repository that needs one. The help text lists
+the same flags; a test fails if this section names a flag the CLI does not have.
+
+`--host` still names the running app URL for a local `audit`; on `--remote` it
+is the DSH version to compare against. With `--json`, each finding gains
+`host` and `compatibility` beside `hostRange`.
+
 Each repository gets one line with its verdict — `clean`, `failing`,
 `unreadable`, or `rate-limited` — and the run ends with a counted summary:
 
@@ -459,6 +510,12 @@ $ npm run benchmark
 ```
 
 (`node scripts/benchmark-audit.mjs` runs the same harness without npm's banner.)
+The tarball ships both that script and the list it reads, so the command runs in
+a checkout and in an installed copy. The test suite packs the package, installs
+the tarball into a temp directory and runs the documented command there;
+[`docs/benchmark-tarball.md`](https://github.com/WJDdidi-1/dsh-plugin-toolkit/blob/main/docs/benchmark-tarball.md)
+records the packaging gap this closes.
+
 It runs the same list twice: `--jobs 1`, which is the loop the command used
 before batching, and the default `--jobs 4`. Measured on this host:
 
@@ -502,7 +559,8 @@ $ dsh-plugin audit --remote --from repos.txt --json
 
 Every repository produces one object with `target`, `version`, `hostRange`,
 `failures` (`{ check, message }`) and `notes`, and the command exits `1` when any
-repository has a problem. A rate-limited repository adds `rateLimited: true`
+repository has a problem. With `--host <version>` each object also carries
+`host` and `compatibility`. A rate-limited repository adds `rateLimited: true`
 and a `rateLimit` object with the HTTP `status` and, when GitHub sent one,
 `resetAt`; it is not marked `unreadable`. A network error is printed in `notes`
 and still exits `1`: a repository the tool could not read is never reported as
@@ -647,6 +705,20 @@ uses; `--range <range>` asks for a different one explicitly. `fix` changes only
 own still runs read-only, and its checks are unchanged; `fix` and `doctor --fix`
 change the manifest only when you pass `--write`.
 
+When the failed install names the host version, `--host` aims the range at that
+host instead of using the default. The written range accepts the host and stops
+before the next major, and the command prints that reasoning:
+
+```sh
+$ npx dsh-plugin-toolkit@latest fix ./my-panel --engines --host 0.3.0 --write
+dsh-plugin fix: wrote engines.dsh ">=0.3.0 <1.0.0" (was missing)
+    host 0.3.0 is inside ">=0.3.0 <1.0.0"; 1.0.0 is excluded, so the range includes the host you run and stops before the next major
+    /Users/you/my-panel/package.json
+```
+
+A host version that is not complete semver is refused, and `--range` still wins
+when it is passed beside `--host`.
+
 For a repository you have not cloned, see
 [Repair a repository you have not cloned](#repair-a-repository-you-have-not-cloned):
 `fix <owner>/<repo> --remote` fetches `package.json` through the GitHub API and
@@ -669,7 +741,9 @@ dsh-plugin doctor: 1 problem(s) in PrismLean/dsh-run-guard
 
 That is still only a verdict. `fix <owner>/<repo> --remote` reads the same
 manifest and prints the edit as a unified diff against `package.json`; it sends
-only a GET to GitHub and writes nothing:
+only a GET to GitHub and writes nothing. Add `--host <version>` to aim the
+proposed range at the DSH that rejected the install; the plan prints the range
+and why it includes that host and excludes the next major:
 
 ```sh
 $ npx dsh-plugin-toolkit@latest fix PrismLean/dsh-run-guard --remote
@@ -701,7 +775,9 @@ $ git apply /tmp/dsh-run-guard-engines.patch
 
 `--patch` creates parent directories and refuses to replace an existing file
 unless you pass `--force`; its output names the file, and the repository it read
-is still untouched. `git apply --check` is the dry run: it fails before changing
+is still untouched. The same host-aware plan works with `--patch`, and
+`audit --remote --host <version> --patch-dir <dir>` writes host-targeted repairs
+for a whole list. `git apply --check` is the dry run: it fails before changing
 anything if the manifest moved since the diff was printed. Commit the applied
 change as you would any other edit.
 

@@ -24,7 +24,11 @@
     "LICENSE",
     "CHANGELOG.md",
     "docs/badge.svg",
-    "docs/card.png"
+    "docs/card.png",
+    "docs/ecosystem-audit-2026-11-03.txt",
+    "scripts/benchmark-audit.mjs",
+    "scripts/compatibility-sample.mjs",
+    "examples/compatibility-sample/"
   ],
   "engines": {
     "node": ">=18",
@@ -55,6 +59,7 @@
     "test": "node scripts/run-tests.mjs",
     "lint": "node --check bin/dsh-plugin.mjs",
     "benchmark": "node scripts/benchmark-audit.mjs",
+    "compatibility": "node scripts/compatibility-sample.mjs",
     "snapshots": "UPDATE_SNAPSHOTS=1 node --test test/testkit.test.mjs"
   },
   "peerDependencies": {

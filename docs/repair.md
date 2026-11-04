@@ -130,7 +130,11 @@ range is the only thing you want to touch, the narrower command is:
 npx dsh-plugin-toolkit@latest fix . --engines --write
 ```
 
-Both commands leave a range that already passes alone. If `doctor` also reports
+When a failed install names the host version, pass `--host <version>` and the
+fixer writes a range aimed at it: the host is accepted and the next major is
+excluded (`>=0.3.0 <1.0.0` for `0.3.0`). The command prints that reasoning
+beside the edit. Both commands leave a range that already passes alone unless
+`--host` or `--range` explicitly asks for a different one. If `doctor` also reports
 `readme`, put the same range text in the README's `## Requirements` section.
 
 ## patch file

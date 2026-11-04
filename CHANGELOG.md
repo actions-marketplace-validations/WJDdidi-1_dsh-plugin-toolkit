@@ -1,3 +1,36 @@
+## Unreleased
+
+- **The README answers "will this plugin install on my DSH?" with a real
+  incompatible plugin and its real output.** The new section runs
+  `audit --remote L3n3L/dsh-resume --host 0.2.2-alpha.3`, shows the
+  `incompatible` verdict and the range that caused it, and points at
+  `scripts/compatibility-sample.mjs`, which replays the checked-in manifest
+  through the same CLI path without a GitHub request. A test compares that
+  output with the README and fails if the section names a flag the CLI does not
+  document.
+- **The tarball ships the throughput benchmark the README cites.**
+  `scripts/benchmark-audit.mjs` and the 3 November list it reads are now in
+  `files`, so `npm run benchmark` runs in an installed copy instead of exiting
+  with `MODULE_NOT_FOUND`. A test packs the package, installs the tarball into a
+  temp directory and runs the documented command there.
+- **`dsh-plugin fix --host <version>` aims the `engines.dsh` repair at the DSH
+  that rejected the install.** The proposed range includes that host and stops
+  before the next major — `fix --remote <owner/repo> --engines --host 0.3.0`
+  plans `>=0.3.0 <1.0.0` and prints why, and `--write` applies the same range in
+  a local checkout. Naming a host is an explicit request, so a valid but too
+  broad range is replaced; without `--host` the existing default and the
+  leave-a-valid-range-alone rule are unchanged. `audit --remote --host
+  --patch-dir` writes the host-targeted repair too, and an invalid host is
+  refused rather than guessed at.
+- **`dsh-plugin audit --remote <owner/repo> --host <version>` says whether the
+  plugin will install on the DSH you run.** The line carries the range
+  `package.json` declares and one of `compatible`, `incompatible` or `unknown`
+  against the host version; `--json` findings add `host` and `compatibility`
+  beside `hostRange`. A missing or malformed range is `unknown`, and a range
+  that excludes the host is `incompatible`, fails the audit and exits `1`. The
+  same answer prints in the `--from` batch mode, and range matching follows npm
+  semver, including the pre-release rule behind the canary install failures.
+
 ## 0.19.0
 
 - **A rate-limited batch audit stops and says so.** When GitHub answers `403`

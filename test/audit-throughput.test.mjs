@@ -22,7 +22,9 @@ import {
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function readmeSection() {
-  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+  // A Windows checkout writes README.md with CRLF, so normalize before matching
+  // line anchors; otherwise the heading exists but `\n` never follows it.
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8').replace(/\r\n/gu, '\n');
   const section = /^### Measured throughput\n([\s\S]*?)(?=^### |^## )/mu.exec(readme);
   assert.ok(section, 'README has no "### Measured throughput" section');
   return section[1];
