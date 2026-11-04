@@ -4,12 +4,14 @@
  * output instead of trusting the template.
  */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { run } from '../lib/cli.mjs';
 import { doctor } from '../lib/doctor.mjs';
 import { init } from '../lib/init.mjs';
 import { mountClient } from '../lib/testkit/index.mjs';
@@ -18,6 +20,22 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function scratch() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-init-'));
+}
+
+const YAML_ID = 'rows = YAML.safe_load(File.read(ARGV[0])); puts JSON.generate(rows.dig(0, "insert", 0, "id"))';
+
+/**
+ * Psych is the parser the harness's YAML loader is closest to. Return a parser
+ * for the patch id, or null after skipping where Ruby is not installed, so the
+ * suite does not depend on a Ruby toolchain.
+ */
+function yamlIdParser(t) {
+  const ruby = spawnSync('ruby', ['-e', 'require "yaml"'], { encoding: 'utf8' });
+  if (ruby.error !== undefined || ruby.status !== 0) {
+    t.skip('ruby/Psych is not installed');
+    return null;
+  }
+  return (file) => spawnSync('ruby', ['-ryaml', '-rjson', '-e', YAML_ID, file], { encoding: 'utf8' });
 }
 
 /** The generated files, without running the checks the other tests run. */
@@ -40,6 +58,50 @@ test('the scaffold passes doctor, which is the point of it', () => {
   assert.equal(report.notes.hostRange, '>=0.2.0');
 });
 
+test('a scoped, unscoped or numeric-like name writes a patch id YAML keeps as a string', (t) => {
+  const parseId = yamlIdParser(t);
+  if (parseId === null) return;
+
+  for (const name of ['@me/my-panel', 'my-panel', '123-panel', '123']) {
+    const dir = path.join(scratch(), 'plugin');
+    assert.equal(init({ dir, name, title: 'Panel' }).ok, true, name);
+
+    const parsed = parseId(path.join(dir, 'cordis.patch.yml'));
+    assert.equal(parsed.status, 0, `${name} does not parse as YAML:\n${parsed.stderr}`);
+    assert.equal(JSON.parse(parsed.stdout), name);
+  }
+});
+
+test('init --name @me/my-panel writes a patch whose scoped id parses', async (t) => {
+  const dir = path.join(scratch(), 'plugin');
+  const io = {
+    lines: [],
+    log(line) {
+      this.lines.push(String(line));
+    },
+    error(line) {
+      this.lines.push(String(line));
+    },
+  };
+  const code = await run(['init', dir, '--name', '@me/my-panel', '--title', 'My panel'], io);
+  assert.equal(code, 0, io.lines.join('\n'));
+
+  const file = path.join(dir, 'cordis.patch.yml');
+  const patch = fs.readFileSync(file, 'utf8');
+  // 0.19.0 wrote `id: @me/my-panel`, which is not a plain YAML scalar. Keep
+  // this check independent of whether Ruby is installed here.
+  assert.match(patch, /^\s*-\s+id: '@me\/my-panel'$/m);
+
+  const parseId = yamlIdParser(t);
+  if (parseId === null) return;
+  const parsed = parseId(file);
+  assert.equal(parsed.status, 0, `cordis.patch.yml does not parse:\n${parsed.stderr}`);
+  assert.equal(JSON.parse(parsed.stdout), '@me/my-panel');
+
+  // The scaffold doctor blesses now carries a patch that parses.
+  assert.deepEqual(doctor(dir).failures, []);
+});
+
 test('the scaffolded client bundle renders without a browser', async () => {
   const dir = path.join(scratch(), 'plugin');
   init({ dir, name: 'my-panel', title: 'My panel' });
@@ -50,6 +112,45 @@ test('the scaffolded client bundle renders without a browser', async () => {
   assert.match(panel.text(), /My panel/);
   await panel.click('button');
   assert.match(panel.text(), /Clicks: 1/);
+  await panel.unmount();
+});
+
+test('a title with an apostrophe or regex metacharacter still parses, in every generated JavaScript file', async () => {
+  const dir = path.join(scratch(), 'plugin');
+  const title = "Bob's (panel)?";
+  assert.equal(init({ dir, name: 'quoted-panel', title }).ok, true);
+
+  for (const relative of ['client.js', 'test/panel.test.mjs']) {
+    const checked = spawnSync(process.execPath, ['--check', path.join(dir, relative)], { encoding: 'utf8' });
+    assert.equal(checked.status, 0, `${relative} does not parse:\n${checked.stderr}`);
+  }
+
+  const panel = await mountClient({ file: path.join(dir, 'client.js') });
+  assert.match(panel.text(), /Bob's \(panel\)\?/);
+  await panel.unmount();
+});
+
+test('init --title "Bob\'s panel" writes JavaScript that parses and a client that mounts', async () => {
+  const dir = path.join(scratch(), 'plugin');
+  const io = {
+    lines: [],
+    log(line) {
+      this.lines.push(String(line));
+    },
+    error(line) {
+      this.lines.push(String(line));
+    },
+  };
+  const code = await run(['init', dir, '--name', 'quoted-panel', '--title', "Bob's panel"], io);
+  assert.equal(code, 0, io.lines.join('\n'));
+
+  for (const relative of ['client.js', 'test/panel.test.mjs']) {
+    const checked = spawnSync(process.execPath, ['--check', path.join(dir, relative)], { encoding: 'utf8' });
+    assert.equal(checked.status, 0, `${relative} does not parse:\n${checked.stderr}`);
+  }
+
+  const panel = await mountClient({ file: path.join(dir, 'client.js') });
+  assert.match(panel.text(), /Bob's panel/);
   await panel.unmount();
 });
 

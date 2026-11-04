@@ -80,6 +80,7 @@ export function evaluate(checkRuns, opts = {}) {
   const foreign = all.filter((run) => isSelf(run, selfRunId) === false);
   const byName = new Map(foreign.map((run) => [run.name, run]));
 
+  const warnings = [];
   const missing = required.filter((name) => byName.has(name) === false);
   const blocking = [];
   const capacity = [];
@@ -112,10 +113,16 @@ export function evaluate(checkRuns, opts = {}) {
     const run = byName.get(name);
     if (run !== undefined) judge(run);
   }
+  // Best-effort checks (the arm64 leg, which GitHub's free pool often refuses).
+  // A missing or still-queued best-effort check is a warning, not a refusal:
+  // its job cannot even start when no runner was acquired, and letting an
+  // exhausted pool block every release is the failure mode the reviewer named.
+  // A best-effort check that actually fails, or that was cancelled after it
+  // started, still refuses.
   for (const group of alternatives) {
     const present = group.map((name) => byName.get(name)).filter((run) => run !== undefined);
     if (present.length === 0) {
-      missing.push(`${group.join(' or ')}`);
+      warnings.push(`${group.join(' or ')} is not present (best effort)`);
       continue;
     }
     const ok = present.some((run) => run.status === 'completed' && run.conclusion === 'success');
@@ -123,18 +130,32 @@ export function evaluate(checkRuns, opts = {}) {
       for (const run of present) if (green.includes(run) === false) green.push(run);
       continue;
     }
-    for (const run of present) judge(run);
+    const decided = present.filter(
+      (run) =>
+        run.status === 'completed' &&
+        (FAILING.has(run.conclusion ?? '') ||
+          (run.conclusion === 'cancelled' && capacityCancelled(run, jobOf(run.name)) === false)),
+    );
+    if (decided.length > 0) {
+      for (const run of decided) judge(run);
+      continue;
+    }
+    warnings.push(
+      `${group.join(' or ')} has no verdict yet (best effort): ${present
+        .map((run) => `${run.name}=${run.status}${run.conclusion === null || run.conclusion === undefined ? '' : `/${run.conclusion}`}`)
+        .join(', ')}`,
+    );
   }
 
   if (missing.length > 0) {
-    return { ok: false, why: `the commit is missing required checks: ${missing.join(', ')}`, missing, blocking, pending, capacity, green };
+    return { ok: false, why: `the commit is missing required checks: ${missing.join(', ')}`, missing, blocking, pending, capacity, green, warnings };
   }
   if (blocking.length > 0) {
     const named = blocking.map((run) => `${run.name}: ${run.why}`).join(', ');
-    return { ok: false, why: `the commit is not green: ${named}`, missing, blocking, pending, capacity, green };
+    return { ok: false, why: `the commit is not green: ${named}`, missing, blocking, pending, capacity, green, warnings };
   }
   if (pending.length > 0) {
-    return { ok: false, why: `the commit is still being checked: ${pending.map((run) => run.name).join(', ')}`, missing, blocking, pending, capacity, green };
+    return { ok: false, why: `the commit is still being checked: ${pending.map((run) => run.name).join(', ')}`, missing, blocking, pending, capacity, green, warnings };
   }
   return {
     ok: true,
@@ -144,6 +165,7 @@ export function evaluate(checkRuns, opts = {}) {
     pending,
     capacity,
     green,
+    warnings,
   };
 }
 
@@ -234,6 +256,7 @@ async function main() {
   });
   for (const run of verdict.green) console.log(`ok      ${run.name}`);
   for (const run of verdict.capacity) console.log(`skip    ${run.name}: cancelled, no runner was ever acquired (capacity)`);
+  for (const warning of verdict.warnings ?? []) console.log(`warn    ${warning}`);
   for (const run of verdict.pending) console.log(`wait    ${run.name}`);
   for (const run of verdict.blocking) console.error(`bad     ${run.name}: ${run.why}`);
   for (const name of verdict.missing) console.error(`missing ${name}`);

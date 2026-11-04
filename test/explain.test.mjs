@@ -7,7 +7,7 @@ import { CAUSES, explain, lastCauseLine, verdict } from '../lib/explain.mjs';
 import { run } from '../lib/cli.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = (name) => path.join(here, '..', 'fixtures', name);
+const fixture = (name) => path.join(here, 'fixtures', name);
 const logFixture = (name) => path.join(here, 'fixtures', name);
 
 function recorder() {

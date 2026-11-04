@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { run } from '../lib/cli.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = (name) => path.join(here, '..', 'fixtures', name);
+const fixture = (name) => path.join(here, 'fixtures', name);
 
 function recorder() {
   const lines = [];

@@ -886,8 +886,8 @@ The install reports success and nothing shows up. In this order:
    entry with `id` and `name`:
    ```yaml
    - insert:
-       - id: my-plugin
-         name: my-plugin
+       - id: 'my-plugin'
+         name: 'my-plugin'
          config: {}
    ```
 5. **Did the client bundle throw?** The host logs the loader error with the
@@ -961,10 +961,18 @@ Honest list, so nobody plans around a feature that does not exist:
 ## Changelog
 
 [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release, including
-the `0.20.0` compatibility answer: `audit --remote --host` says whether a
-plugin installs on the DSH you run, `fix --host` aims the repair at that host,
-and `npm run benchmark` works from the published tarball as well as from a
-checkout.
+the `0.20.2` packaging fixes: `init` quotes the package name in
+`cordis.patch.yml`, so a scoped name like `@me/my-panel` parses instead of
+failing on `id: @me/my-panel`, and `verify` recognizes the patch whether it is
+written with or without a leading `./`, so a tarball that omits it stops at
+`pack` and names `cordis.patch.yml` before installing a plugin that cannot
+load. The `0.20.1` scaffold fix is there too: `init --title` escapes the title
+in every generated JavaScript file, so an apostrophe or regular-expression
+character no longer leaves a scaffold that fails `node --check` or its own
+`npm test`. The `0.20.0` compatibility answer is also recorded:
+`audit --remote --host` says whether a plugin installs on the DSH you run,
+`fix --host` aims the repair at that host, and `npm run benchmark` works from
+the published tarball as well as from a checkout.
 
 ## License
 

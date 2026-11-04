@@ -1,0 +1,28 @@
+{
+  "name": "bare-path",
+  "version": "1.0.0",
+  "description": "names its bundle patch without a leading ./",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "client.js",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    "./client": "./client.js"
+  }
+}

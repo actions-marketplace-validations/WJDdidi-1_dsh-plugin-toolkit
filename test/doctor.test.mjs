@@ -9,7 +9,7 @@ import { doctor, hostRange } from '../lib/doctor.mjs';
 import { init } from '../lib/init.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = (name) => path.join(here, '..', 'fixtures', name);
+const fixture = (name) => path.join(here, 'fixtures', name);
 const scratch = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-doctor-'));
 
 test('a manifest the host can load passes every check', () => {

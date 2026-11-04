@@ -32,6 +32,24 @@ The README measured the first eight entries of the 3 November install-failure
 list, but `docs/ecosystem-audit-2026-11-03.txt` was not shipped either, so even a
 script that packed would have had no sample to read.
 
+### The 3-trial measurement
+
+The defect was measured by packing the installed `0.19.0` copy, installing that
+tarball into a private temp prefix and running the documented command three
+times. The metric was the number of trials that exited nonzero, with a threshold
+of `0`:
+
+| trial | exit code |
+| --- | --- |
+| 1 | 1 |
+| 2 | 1 |
+| 3 | 1 |
+
+All three failed with `MODULE_NOT_FOUND` on the same missing
+`scripts/benchmark-audit.mjs`, so the metric was `3` against a threshold of `0`.
+The packed tarball had 34 files and no `scripts/` entry; `lib/benchmark.mjs` was
+present.
+
 ## What ships now
 
 `package.json` ships both files the command needs:

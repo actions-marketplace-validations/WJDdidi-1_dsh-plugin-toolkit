@@ -1,3 +1,25 @@
+## 0.20.2
+
+- **`dsh-plugin init` writes a YAML-safe patch id.** A scoped package name such
+  as `@me/my-panel` is quoted in `cordis.patch.yml`, so the file parses instead
+  of failing on `id: @me/my-panel`; an id like `123` stays a string rather than
+  becoming a number. Ruby/Psych parses the generated patch for scoped,
+  unscoped and numeric-like names, and `insert[0].id` is the exact name.
+- **`dsh-plugin verify` names a bundle patch the tarball would omit before
+  installing it.** `dsh.bundle.patch` is recognized whether it is written
+  `./cordis.patch.yml` or `cordis.patch.yml`, so a `files` list that leaves the
+  patch out makes `verify --no-mount` stop at `pack` and exit `1` with
+  `cordis.patch.yml` named, instead of spending an install on a plugin that
+  cannot load. A scaffold that ships its patch still exits `0`.
+
+## 0.20.1
+
+- **`dsh-plugin init --title` escapes the title in every generated JavaScript
+  file.** An apostrophe, backslash, newline or regular-expression character no
+  longer breaks the scaffold: `init --title "Bob's panel"` writes a `client.js`
+  and `test/panel.test.mjs` that pass `node --check`, and the scaffold's own
+  `npm test` passes.
+
 ## 0.20.0
 
 - **The README answers "will this plugin install on my DSH?" with a real

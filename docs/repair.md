@@ -158,7 +158,7 @@ same shape `init` writes, is:
 
 ```yaml
 - insert:
-    - id: my-panel
+    - id: 'my-panel'
       name: 'my-panel'
       config: {}
 ```

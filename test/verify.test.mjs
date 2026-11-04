@@ -14,8 +14,18 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 import { init } from '../lib/init.mjs';
 import { verify } from '../lib/verify.mjs';
+import { run } from '../lib/cli.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function recorder() {
+  const lines = [];
+  return {
+    lines,
+    log: (line) => lines.push(String(line)),
+    error: (line) => lines.push(String(line)),
+  };
+}
 
 test('the scaffold survives being packed, installed and mounted', async () => {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-')), 'plugin');
@@ -169,4 +179,36 @@ test('a wildcard export is shipped by its wildcard files entry', async () => {
   const result = await verify({ dir, mount: false });
   assert.equal(result.ok, true, JSON.stringify(result.failures));
   assert.ok(result.files.includes('locale/en.json'));
+});
+
+test('a bare bundle patch omitted from files fails verify at pack, before install', async () => {
+  // `doctor` now catches the manifest omission too, but verify answers the
+  // stronger question: is the patch in the file list npm will actually publish?
+  const dir = path.join(root, 'test', 'fixtures', 'bare-path');
+  const result = await verify({ dir, mount: false });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'pack');
+  assert.equal(result.failures.length, 1);
+  assert.equal(result.failures[0].check, 'pack');
+  assert.match(result.failures[0].message, /cordis\.patch\.yml/);
+});
+
+test('the CLI reports the bare-patch omission at pack and exits 1', async () => {
+  const io = recorder();
+  const code = await run(['verify', path.join(root, 'test', 'fixtures', 'bare-path'), '--no-mount'], io);
+  const output = io.lines.join('\n');
+  assert.equal(code, 1, output);
+  assert.match(output, /stopped at pack/);
+  assert.match(output, /cordis\.patch\.yml/);
+});
+
+test('the scaffold with the patch in files still exits 0 with --no-mount', async () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-patch-')), 'plugin');
+  const scaffold = init({ dir, name: 'patch-shipped' });
+  assert.equal(scaffold.ok, true, JSON.stringify(scaffold.failures));
+  const io = recorder();
+  const code = await run(['verify', dir, '--no-mount'], io);
+  const output = io.lines.join('\n');
+  assert.equal(code, 0, output);
+  assert.match(output, /^ok  packed \d+ file\(s\)/m);
 });

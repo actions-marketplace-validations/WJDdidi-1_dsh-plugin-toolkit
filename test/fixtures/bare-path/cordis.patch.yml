@@ -1,0 +1,4 @@
+- insert:
+    - id: bare-path
+      name: 'bare-path'
+      config: {}

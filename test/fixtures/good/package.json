@@ -1,0 +1,25 @@
+{
+  "name": "demo-plugin",
+  "version": "1.2.3",
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md",
+    "client.js",
+    "dsh.bundle.patch.yml"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "dsh.bundle.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    "./client": "./client.js"
+  }
+}

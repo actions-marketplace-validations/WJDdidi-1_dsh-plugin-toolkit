@@ -89,12 +89,28 @@ test('a check still running blocks the publish', () => {
   assert.match(verdict.why, /still being checked: the tool on a real plugin/u);
 });
 
-test('the arm64 gate counts as an alternative, not as a required check', () => {
+test('the arm64 gate is best effort: absent or queued warns, failing refuses', () => {
   const runs = allGreen().filter((run) => run.name !== 'arm64 job did not hide a test failure');
-  assert.equal(verdictOf(runs).ok, false);
 
-  const withArm = [...runs, { ...green('arm64 job did not hide a test failure'), conclusion: 'success' }];
-  assert.equal(verdictOf(withArm).ok, true);
+  // missing entirely (the arm64 job never started, so its gate job was never created)
+  const absent = verdictOf(runs);
+  assert.equal(absent.ok, true, absent.why);
+  assert.match(absent.warnings.join(' '), /not present \(best effort\)/u);
+
+  // present but queued, waiting on an arm64 runner that never arrived
+  const queued = verdictOf([...runs, { name: 'arm64 job did not hide a test failure', status: 'queued', conclusion: null }]);
+  assert.equal(queued.ok, true, queued.why);
+  assert.match(queued.warnings.join(' '), /no verdict yet \(best effort\)/u);
+
+  // green alternative is simply green
+  const withArm = verdictOf([...runs, { ...green('arm64 job did not hide a test failure'), conclusion: 'success' }]);
+  assert.equal(withArm.ok, true);
+  assert.equal(withArm.warnings.length, 0);
+
+  // a real arm64 failure still refuses
+  const failed = verdictOf([...runs, { ...green('arm64 job did not hide a test failure'), conclusion: 'failure' }]);
+  assert.equal(failed.ok, false);
+  assert.match(failed.why, /arm64 job did not hide a test failure: failure/u);
 });
 
 test('a cancelled job that never got a runner is capacity, not a failure', () => {

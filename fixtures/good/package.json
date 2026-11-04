@@ -5,6 +5,7 @@
     "bin/",
     "lib/",
     "README.md",
+    "dsh.bundle.patch.yml",
     "client.js"
   ],
   "engines": {
