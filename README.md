@@ -28,7 +28,7 @@ The same checks, in the right sidebar: type a folder, an `owner/repo`, or a GitH
 
 | You are… | Start with | Then |
 | --- | --- | --- |
-| writing your first plugin | [`init`](#1-write-a-plugin) | `doctor`, `verify` |
+| writing your first plugin | [`init`](#1-write-a-plugin) | `doctor`, `fix`, `verify` |
 | changing a panel that is already installed | [`dev`](#2-develop-a-panel) | `mount`, the testkit, `audit` |
 | shipping a version | [`verify`](#3-ship-a-version) | `release`, `index` |
 
@@ -47,6 +47,10 @@ $ dsh plugin add dsh-plugin-toolkit
 ### 1. Write a plugin
 
 [`init`](#start-from-a-plugin-that-already-passes) writes the files whose absence shows up as a failed first publish — `engines.dsh`, the patch file, a `files` list that ships the code, a client bundle, a test for it, and the CI that runs both. `doctor` then checks the same things without writing anything, and [`verify`](#prove-the-tarball-works-not-just-the-repository) checks the tarball instead of the working copy.
+
+If a plugin already exists and only lacks the host range, `doctor` names it and
+`npx dsh-plugin-toolkit@latest fix . --engines --write` writes the range after
+showing it.
 
 ```sh
 npx dsh-plugin-toolkit@latest init ./my-panel --name my-panel
@@ -372,8 +376,33 @@ their stars, and checks the one you pick. A repository is downloaded once as a
 tarball into a temp folder, so nothing is cloned into your workspace and
 nothing is installed.
 
-The CLI checks local folders only; for a repository, clone it or let the panel
-do the download.
+The CLI reads a repository straight from the GitHub API:
+
+```bash
+dsh-plugin doctor --remote V1ki/dsh-plugin-subscriptions
+```
+
+```text
+dsh-plugin doctor: 1 problem(s) in V1ki/dsh-plugin-subscriptions
+  ⨯ engines.dsh: engines.dsh is missing, so a host that enforces the range rejects the install as "incompatible with dsh"; declare the range you support, e.g. "engines": { "dsh": ">=0.2.0" }
+```
+
+That is the whole reason this mode exists: the plugin hub files failed installs
+back into plugin repositories, and the report is a sentence — `plugin install
+failed`, `plugin does not support the DSH version in use` — that never names a
+file. Reading `package.json` over the API is enough to name it.
+
+What it can see, and what it cannot:
+
+- Manifest checks (`engines.dsh`, `files`, `dsh.client`, `exports`) run on the
+  real `package.json`.
+- File checks (does `exports["./client"]` point at a file that exists, does the
+  root export `apply`) need the tree. A package that runs `prepack`,
+  `prepublishOnly`, `prepare` or `build` publishes files it does not commit, so
+  those checks are **skipped with a note** instead of calling a working plugin
+  broken.
+- Public repositories work anonymously, but GitHub allows 60 requests an hour.
+  Export `GH_TOKEN` (or `GITHUB_TOKEN`) to audit more than one or two.
 
 ## What `doctor` checks
 
@@ -389,6 +418,31 @@ do the download.
 | `root export` | The loader imports the bare package name; if that module is the CLI (or exports no `apply`), the row mounts nothing while the install reports success |
 
 Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged.
+
+## Fix a missing host range
+
+`doctor` names a missing `engines.dsh`, but it never edits the manifest for you.
+`fix --engines` prints the range it would write, and writes it only when you
+also pass `--write`:
+
+```sh
+$ npx dsh-plugin-toolkit@latest fix ./my-panel --engines
+dsh-plugin fix: would write engines.dsh ">=0.2.0" (was missing)
+    /Users/you/my-panel/package.json
+    nothing written; pass --write to apply
+
+$ npx dsh-plugin-toolkit@latest fix ./my-panel --engines --write
+dsh-plugin fix: wrote engines.dsh ">=0.2.0" (was missing)
+    /Users/you/my-panel/package.json
+```
+
+A missing value, or one `doctor` calls "not a semver range", becomes `>=0.2.0` — the
+same range `init` writes. A range that already passes the check is left alone,
+because `>=0.3.0` can be a deliberate statement about the host APIs the plugin
+uses; `--range <range>` asks for a different one explicitly. `fix` changes only
+`engines.dsh` and leaves the other `engines` entries in place. `doctor` itself
+still runs read-only, and its checks are unchanged; `fix` changes the manifest
+only when you pass `--write`.
 
 ## When an install fails
 
@@ -406,6 +460,10 @@ dsh-plugin explain: 1 known cause(s)
   check: engines.dsh
   fix: declare the range you actually support: "engines": { "dsh": ">=0.2.0" }
 ```
+
+Once you know the missing range is the problem, `dsh-plugin fix <dir> --engines
+--write` writes it for you. Without `--write` the same command only prints the
+range it would add.
 
 When the report gives you a log path such as `logs: ~/.dsh/logs/…` instead of
 a sentence, point `--log` at the file. It reads the log and explains the last

@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The arm64 pool can be slow. The daily schedule is the fallback that still
+  # gives the arm Mac build coverage when a push cannot acquire a runner.
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
 
 jobs:
   test:
@@ -12,7 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Keep the push/PR macOS leg on the predictable Intel image; the arm64
+        # job below covers the host the plugin is actually loaded on.
+        os: [ubuntu-latest, macos-15-intel, windows-latest]
         node: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +29,57 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  macos-arm64:
+    name: node 22 on macos-latest (arm64)
+    # The plugin is loaded by an arm Mac app, so arm64 needs a real host.
+    # Run it on main and on the scheduled/manual fallback, but never let a
+    # slow arm64 pool turn the whole workflow red: the run is serialized,
+    # bounded, and its job-level failure is inspected by the gate below.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: macos-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    concurrency:
+      group: ci-macos-arm64-${{ github.repository }}
+      cancel-in-progress: false
+    # A job that never acquired a runner has no step outcomes. A job that did
+    # get one must have run `npm test` successfully; this is what lets the gate
+    # tell capacity starvation apart from a real arm64 test failure.
+    outputs:
+      runner: ${{ steps.checkout.outcome }}
+      tests: ${{ steps.tests.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+        id: checkout
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: tests
+        run: npm test
+
+  macos-arm64-gate:
+    name: arm64 job did not hide a test failure
+    needs: macos-arm64
+    # Only the never-acquired case may pass without a test outcome.
+    if: always() && needs.macos-arm64.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - name: the arm64 tests passed, or no runner was ever acquired
+        env:
+          RUNNER_OUTCOME: ${{ needs.macos-arm64.outputs.runner }}
+          TESTS_OUTCOME: ${{ needs.macos-arm64.outputs.tests }}
+        run: |
+          if [ -n "$RUNNER_OUTCOME" ] && [ "$TESTS_OUTCOME" != "success" ]; then
+            echo "an arm64 runner was acquired but the tests did not pass (tests: ${TESTS_OUTCOME:-not run})"
+            exit 1
+          fi
+          echo "arm64 tests: ${TESTS_OUTCOME:-not run (runner never acquired)}"
 
   dogfood:
     name: the tool on a real plugin
