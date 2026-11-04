@@ -1,0 +1,21 @@
+{
+  "_why": "Publishing is not allowed unless these checks on the tagged commit are green. The names come from .github/workflows/ci.yml; adding or renaming a job means editing both files in the same PR.",
+  "workflow": "CI",
+  "required": [
+    "node 18 on ubuntu-latest",
+    "node 20 on ubuntu-latest",
+    "node 22 on ubuntu-latest",
+    "node 18 on windows-latest",
+    "node 20 on windows-latest",
+    "node 22 on windows-latest",
+    "node 18 on macos-15-intel",
+    "node 20 on macos-15-intel",
+    "node 22 on macos-15-intel",
+    "the tool on a real plugin"
+  ],
+  "_optional": "node 22 on macos-latest (arm64) is not required: GitHub frequently has no arm64 runner for it. The arm64 job listens to it directly and 'arm64 job did not hide a test failure' is required instead.",
+  "required_alternatives": [
+    ["arm64 job did not hide a test failure"]
+  ],
+  "capacity_policy": "A check that was CANCELLED without ever acquiring a runner is a capacity problem, not a test failure: it is reported and skipped. A cancelled check whose job really started, or one whose job state cannot be read, is a failure."
+}
