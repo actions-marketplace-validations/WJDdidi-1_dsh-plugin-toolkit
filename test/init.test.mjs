@@ -148,6 +148,28 @@ test('a title with an apostrophe or regex metacharacter still parses, in every g
   await panel.unmount();
 });
 
+test('init --title escapes a slash so every generated panel test parses', async () => {
+  const titles = ['Input/Output panel', 'Read/Write panel', 'AC/DC panel'];
+  for (const [index, title] of titles.entries()) {
+    const dir = path.join(scratch(), 'plugin');
+    const io = {
+      lines: [],
+      log(line) {
+        this.lines.push(String(line));
+      },
+      error(line) {
+        this.lines.push(String(line));
+      },
+    };
+    const code = await run(['init', dir, '--name', `slash-panel-${index}`, '--title', title], io);
+    assert.equal(code, 0, io.lines.join('\n'));
+
+    const file = path.join(dir, 'test/panel.test.mjs');
+    const checked = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
+    assert.equal(checked.status, 0, `${title} generated a test/panel.test.mjs that does not parse:\n${checked.stderr}`);
+  }
+});
+
 test('init --title "Bob\'s panel" writes JavaScript that parses and a client that mounts', async () => {
   const dir = path.join(scratch(), 'plugin');
   const io = {
