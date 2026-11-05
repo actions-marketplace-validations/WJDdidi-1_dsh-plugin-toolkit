@@ -1,3 +1,24 @@
+## 0.20.5
+
+- **`dsh-plugin doctor` reads a `package.json` saved with a UTF-8 BOM.**
+  Notepad and some VS Code configurations write one; the manifest reader now
+  strips it instead of failing with a bare `Unexpected token`. A manifest that
+  is genuinely broken fails with `<path>/package.json is not valid JSON: …`,
+  naming the file and the parse error so the user knows what to fix.
+- **`dsh-plugin init --title` escapes `/` in the generated
+  `test/panel.test.mjs`.** A title such as `Input/Output panel` is written into
+  the generated assertion as one regex literal, so the scaffold's test parses
+  and `init --title "Input/Output panel"` produces a plugin whose own `npm test`
+  passes. The other title characters keep their previous escaping.
+
+## 0.20.4
+
+- **`dsh-plugin verify` removes its scratch install directory.** The temporary
+  directory used to pack and install the tarball is deleted in a `finally`, so a
+  passing run and one that stops at install or mount no longer leave a
+  `dsh-plugin-verify-*` tree under `TMPDIR`; repeated CI runs no longer fill the
+  runner's disk.
+
 ## 0.20.3
 
 - **`dsh-plugin doctor` reads `engines.dsh` with the package's own semver

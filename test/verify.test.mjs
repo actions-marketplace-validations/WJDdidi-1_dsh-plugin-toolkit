@@ -27,6 +27,28 @@ function recorder() {
   };
 }
 
+function scratchEntries(tmp) {
+  return fs.readdirSync(tmp).filter((name) => name.startsWith('dsh-plugin-verify-'));
+}
+
+/** Run a callback with every temp-directory variable pointed at one empty dir. */
+async function withIsolatedTmp(callback) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-tmp-'));
+  const keys = ['TMPDIR', 'TEMP', 'TMP'];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) process.env[key] = tmp;
+  try {
+    return await callback(tmp);
+  } finally {
+    for (const key of keys) {
+      const value = previous.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 test('the scaffold survives being packed, installed and mounted', async () => {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-')), 'plugin');
   init({ dir, name: 'verify-me', title: 'Verify me' });
@@ -35,6 +57,31 @@ test('the scaffold survives being packed, installed and mounted', async () => {
   assert.equal(result.stage, 'mount');
   assert.match(result.text, /Verify me/);
   assert.ok(result.files.includes('client.js'), 'the tarball has to contain the panel');
+});
+
+test('verify removes its scratch install directory, even when a stage fails', async () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-scratch-')), 'plugin');
+  init({ dir, name: 'clean-scratch' });
+
+  await withIsolatedTmp(async (tmp) => {
+    const passed = await verify({ dir, mount: false });
+    assert.equal(passed.ok, true, JSON.stringify(passed.failures));
+    assert.deepEqual(scratchEntries(tmp), [], 'a successful run left its install tree behind');
+
+    // The same plugin, now failing after the scratch install: the early return
+    // still has to clean up, not only the successful path.
+    fs.writeFileSync(path.join(dir, 'index.js'), 'export function apply() {}\nthrow new Error("boom");\n');
+    const manifestPath = path.join(dir, 'package.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.main = 'index.js';
+    manifest.files = ['index.js', 'client.js', 'cordis.patch.yml', 'README.md'];
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const failed = await verify({ dir, mount: false });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.stage, 'install');
+    assert.deepEqual(scratchEntries(tmp), [], 'a failed run left its install tree behind');
+  });
 });
 
 test('a files list that drops the panel is refused, and doctor now catches it too', async () => {

@@ -19,6 +19,33 @@ test('a manifest the host can load passes every check', () => {
   assert.equal(report.notes.hostRange, '>=0.2.0');
 });
 
+test('a manifest saved with a UTF-8 BOM is read instead of rejected', () => {
+  const dir = path.join(scratch(), 'plugin');
+  fs.cpSync(fixture('good'), dir, { recursive: true });
+  const manifestPath = path.join(dir, 'package.json');
+  fs.writeFileSync(manifestPath, `\uFEFF${fs.readFileSync(manifestPath, 'utf8')}`);
+
+  const report = doctor(dir);
+  assert.deepEqual(report.failures, []);
+  assert.equal(report.notes.version, '1.2.3');
+});
+
+test('a broken manifest names the file and the parse failure', () => {
+  const dir = path.join(scratch(), 'plugin');
+  fs.cpSync(fixture('good'), dir, { recursive: true });
+  const manifestPath = path.join(dir, 'package.json');
+  fs.writeFileSync(manifestPath, '\uFEFF{ "name": "broken",\n');
+
+  assert.throws(
+    () => doctor(dir),
+    (error) => {
+      assert.ok(error.message.startsWith(`${manifestPath} is not valid JSON: `), error.message);
+      assert.doesNotMatch(error.message, /^Unexpected token/u);
+      return true;
+    },
+  );
+});
+
 test('a missing engines.dsh is reported, because the index cannot state a host range without it', () => {
   const report = doctor(fixture('no-engines'));
   assert.equal(report.failures.length, 1);
