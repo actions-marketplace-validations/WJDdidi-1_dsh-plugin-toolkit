@@ -58,6 +58,24 @@ test('the scaffold passes doctor, which is the point of it', () => {
   assert.equal(report.notes.hostRange, '>=0.2.0');
 });
 
+test('the scaffold still exits 0 from the doctor command', async () => {
+  const dir = path.join(scratch(), 'plugin');
+  assert.equal(init({ dir, name: 'doctor-check', title: 'Doctor check' }).ok, true);
+
+  const lines = [];
+  const io = {
+    lines,
+    log(line) {
+      this.lines.push(String(line));
+    },
+    error(line) {
+      this.lines.push(String(line));
+    },
+  };
+  assert.equal(await run(['doctor', dir], io), 0, lines.join('\n'));
+  assert.match(lines.join('\n'), /^ok\s+doctor-check@0\.1\.0 \(host >=0\.2\.0\)$/m);
+});
+
 test('a scoped, unscoped or numeric-like name writes a patch id YAML keeps as a string', (t) => {
   const parseId = yamlIdParser(t);
   if (parseId === null) return;

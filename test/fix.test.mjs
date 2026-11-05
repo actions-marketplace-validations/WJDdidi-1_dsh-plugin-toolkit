@@ -135,3 +135,17 @@ test('fix refuses a directory with no package.json instead of creating one', asy
   assert.match(io.lines.join('\n'), /no package\.json/);
   assert.equal(fs.existsSync(path.join(dir, 'package.json')), false);
 });
+
+test('an invalid --range is refused and leaves package.json byte for byte alone', async () => {
+  const dir = plugin({ node: '>=18', dsh: '>=0.2.0' });
+  const before = rawOf(dir);
+
+  const result = fixEngines({ dir, range: '>=banana', write: true, force: true });
+  assert.equal(result.ok, false);
+  assert.match(result.failures[0].message, /not a semver range/u);
+  assert.equal(rawOf(dir), before);
+
+  const io = recorder();
+  assert.notEqual(await run(['fix', dir, '--engines', '--range', '>=banana', '--write'], io), 0);
+  assert.equal(rawOf(dir), before);
+});

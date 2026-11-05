@@ -365,9 +365,9 @@ actually installs: `doctor` reads the working copy, so a `files` list that
 forgets `client.js` passes it and fails only after `npm i`.
 
 `command: doctor` stops at the manifest checks (fast, no install), and
-`command: index` audits `market/index.json` instead, failing on any version that
-cannot state a host range. Pin `version:` if you would rather not track the
-latest release.
+`command: index` audits `market/index.json` instead, failing on any version whose
+`engines.dsh` is missing or is not a semver range. Pin `version:` if you would
+rather not track the latest release.
 
 ## Check a plugin you have not cloned
 
@@ -487,6 +487,10 @@ rate-limited  demo/next    — GitHub rate-limited the batch before this reposit
 
 summary: 4 repositories — 1 clean, 1 failing (1 problem), 0 unreadable, 2 rate-limited
 ```
+
+The parenthesised count is the number of failed checks, not the number of failing
+repositories: one repository that fails both `engines.dsh` and its client
+declaration prints `1 failing (2 problems)`.
 
 The command exits `1` when any repository is failing, unreadable, or
 rate-limited, and `0` only when every repository in the list is clean. `--from`
@@ -635,7 +639,7 @@ the diff in the terminal.
 | Check | Why it matters |
 | --- | --- |
 | `version` | The tag is built from it; a malformed version produces a tag nobody can install |
-| `engines.dsh` | The market index copies this into every version entry. Missing it fails the index PR |
+| `engines.dsh` | The market index copies this into every version entry. Missing it, or a value that is not a semver range, fails the index PR |
 | `readme` | A `Requirements` section that states the declared range, so an install failure is predictable |
 | `dsh field` | `dsh.bundle.patch` must exist for the host to load the plugin |
 | `patch file` | The path declared above must be a real file |
@@ -961,8 +965,13 @@ Honest list, so nobody plans around a feature that does not exist:
 ## Changelog
 
 [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release, including
-the `0.20.2` packaging fixes: `init` quotes the package name in
-`cordis.patch.yml`, so a scoped name like `@me/my-panel` parses instead of
+the `0.20.3` host-range check: `doctor` now uses the package's own semver
+parser, so an `engines.dsh` value such as `>=banana` or a complete pin such as
+`0.2.0` fails with a clear "not a semver range" message while partial, wildcard
+and multi-comparator ranges still pass; `index`, `fix --engines` and
+`audit --remote` apply the same rule, so a bad range is caught before the tag.
+The `0.20.2` packaging fixes are recorded too: `init` quotes the package name
+in `cordis.patch.yml`, so a scoped name like `@me/my-panel` parses instead of
 failing on `id: @me/my-panel`, and `verify` recognizes the patch whether it is
 written with or without a leading `./`, so a tarball that omits it stops at
 `pack` and names `cordis.patch.yml` before installing a plugin that cannot

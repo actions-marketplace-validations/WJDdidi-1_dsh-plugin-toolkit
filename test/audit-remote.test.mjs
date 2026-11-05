@@ -147,3 +147,14 @@ test('the list runner reports every target even when one cannot be read', async 
   assert.deepEqual(result.reports.map((report) => report.target), ['demo/clean', 'demo/blocked', 'demo/missing']);
   assert.equal(result.reports[2].failures[0].check, 'manifest');
 });
+
+test('a malformed engines.dsh is reported as a range, not as a missing field', async () => {
+  const files = {
+    ...cleanFiles,
+    'package.json': JSON.stringify(manifest({ engines: { dsh: '>=banana' } })),
+  };
+  const report = await auditRemote('demo/malformed', { fetchImpl: github({ 'demo/malformed': files }) });
+  const failure = report.failures.find((entry) => entry.check === 'engines.dsh');
+  assert.match(failure.message, /not a semver range/u);
+  assert.doesNotMatch(failure.message, /is missing/u);
+});

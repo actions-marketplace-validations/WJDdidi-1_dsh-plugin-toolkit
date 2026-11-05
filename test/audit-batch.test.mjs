@@ -34,6 +34,24 @@ const brokenFiles = {
   'package.json': JSON.stringify(manifest({ engines: undefined })),
 };
 
+const twoProblemFiles = {
+  ...cleanFiles,
+  'package.json': JSON.stringify(
+    manifest({
+      engines: undefined,
+      dsh: { bundle: { patch: 'cordis.patch.yml' }, client: { platform: 'web' } },
+    }),
+  ),
+};
+
+const threeProblemFiles = {
+  'package.json': twoProblemFiles['package.json'],
+  'index.js': cleanFiles['index.js'],
+  'cordis.patch.yml': cleanFiles['cordis.patch.yml'],
+  // No README, so the two missing manifest declarations above are joined by
+  // the readme check.
+};
+
 function github(repositories) {
   return async (url) => {
     const match = /^https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)\/contents\/([^?]+)/u.exec(url);
@@ -91,6 +109,55 @@ test('audit --remote --from exits 1 and names the failing repository', async (t)
   const output = io.lines.join('\n');
   assert.match(output, /failing\s+demo\/broken\s+— engines\.dsh:/u);
   assert.match(output, /1 clean, 1 failing \(1 problem\), 0 unreadable/u);
+});
+
+test('the summary counts failed checks rather than failing repositories', async (t) => {
+  const list = listFile('demo/two-problems\n');
+  t.after(list.cleanup);
+  const io = recorder();
+  const code = await run(['audit', '--remote', '--from', list.file], io, {
+    fetchImpl: github({ 'demo/two-problems': twoProblemFiles }),
+  });
+
+  assert.equal(code, 1);
+  const output = io.lines.join('\n');
+  assert.match(output, /failing\s+demo\/two-problems\s+— engines\.dsh:/u);
+  assert.match(output, /\(\+1 more\)/u);
+  assert.match(output, /summary: 1 repository — 0 clean, 1 failing \(2 problems\), 0 unreadable, 0 rate-limited/u);
+});
+
+test('the batch summary parenthetical is the sum of every repository\'s failures', async (t) => {
+  const repositories = {
+    'demo/clean': cleanFiles,
+    'demo/one-problem': brokenFiles,
+    'demo/two-problems': twoProblemFiles,
+    'demo/three-problems': threeProblemFiles,
+  };
+  const list = listFile(`${Object.keys(repositories).join('\n')}\n`);
+  t.after(list.cleanup);
+
+  const text = recorder();
+  const textCode = await run(['audit', '--remote', '--from', list.file], text, {
+    fetchImpl: github(repositories),
+  });
+  assert.equal(textCode, 1);
+  const output = text.lines.join('\n');
+  const summary = /summary: 4 repositories — 1 clean, 3 failing \((\d+) problems?\), 0 unreadable, 0 rate-limited/u.exec(
+    output,
+  );
+  assert.ok(summary, `the summary line did not match:\n${output}`);
+
+  // The JSON findings are the source of truth for how many checks failed; the
+  // printed parenthetical is the claim under test.
+  const json = recorder();
+  const jsonCode = await run(['audit', '--remote', '--from', list.file, '--json'], json, {
+    fetchImpl: github(repositories),
+  });
+  assert.equal(jsonCode, 1);
+  const reports = JSON.parse(json.lines.join('\n'));
+  const failures = reports.reduce((count, report) => count + report.failures.length, 0);
+  assert.equal(failures, 6); // 0 + 1 + 2 + 3
+  assert.equal(Number(summary[1]), failures);
 });
 
 test('audit --remote --from reports a rate-limited repository as rate-limited, never clean or unreadable', async (t) => {
