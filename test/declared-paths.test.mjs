@@ -4,7 +4,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { run } from '../lib/cli.mjs';
-import { declaredPaths } from '../lib/doctor.mjs';
+import { declaredPaths, isShipped } from '../lib/doctor.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => path.join(here, 'fixtures', name);
@@ -38,4 +38,26 @@ test('a bare bundle patch omitted from files makes doctor exit 1 with a files li
   const failures = io.lines.filter((line) => line.includes('✗'));
   assert.equal(failures.length, 1, output);
   assert.match(failures[0], /files list: files does not ship cordis\.patch\.yml/);
+});
+
+test('a root-level *.js glob does not ship a nested client export', async () => {
+  const io = recorder();
+  const code = await run(['doctor', fixture('glob-js')], io);
+
+  const output = io.lines.join('\n');
+  assert.equal(code, 1, output);
+  const failures = io.lines.filter((line) => line.includes('✗'));
+  assert.equal(failures.length, 1, output);
+  assert.match(failures[0], /files list: files does not ship lib\/client\.js/);
+});
+
+test('files globs use npm path semantics instead of a prefix', () => {
+  // `*.js` is root-level only, so it cannot stand in for lib/client.js.
+  assert.equal(isShipped('client.js', ['*.js']), true);
+  assert.equal(isShipped('lib/client.js', ['*.js']), false);
+  // npm appends `*` to a `dir/*` entry, and `**` crosses directories.
+  assert.equal(isShipped('lib/client.js', ['lib/*.js']), true);
+  assert.equal(isShipped('lib/nested/deep.js', ['lib/*.js']), false);
+  assert.equal(isShipped('lib/nested/deep.js', ['lib/*']), true);
+  assert.equal(isShipped('lib/nested/deep.js', ['lib/**/*.js']), true);
 });

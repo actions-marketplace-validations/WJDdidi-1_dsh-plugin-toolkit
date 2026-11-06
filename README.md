@@ -965,10 +965,18 @@ Honest list, so nobody plans around a feature that does not exist:
 ## Changelog
 
 [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release, including
-the `0.20.5` fixes: `doctor` reads a `package.json` saved with a UTF-8 BOM
-instead of failing with a bare `Unexpected token`, and `init --title` escapes a
-`/` in the generated `test/panel.test.mjs`, so a title like `Input/Output panel`
-leaves a scaffold that parses and passes its own `npm test`. The `0.20.4` fix
+the `0.20.7` fix: `release --budget` rejects a value that is not a positive
+number of seconds — `8m`, `0`, `-1` or a missing value — with exit `2` before
+any local or remote tag is created, instead of pushing the tag and then waiting.
+The `0.20.6` fixes are recorded too: `doctor` reads a `files` glob the way
+`npm pack` does, so a `"files": ["*.js"]` entry no longer hides a nested
+`exports["./client"]`, and
+`doctor --remote`/`audit --remote` apply the same files-list check instead of
+printing `clean`. The `0.20.5` fixes are recorded too: `doctor` reads a
+`package.json` saved with a UTF-8 BOM instead of failing with a bare
+`Unexpected token`, and `init --title` escapes a `/` in the generated
+`test/panel.test.mjs`, so a title like `Input/Output panel` leaves a scaffold
+that parses and passes its own `npm test`. The `0.20.4` fix
 is recorded too: `verify` deletes its scratch install directory in a
 `finally`, so a passing run and one that stops at install or mount no longer
 leave a `dsh-plugin-verify-*` tree under `TMPDIR`. The `0.20.3` host-range

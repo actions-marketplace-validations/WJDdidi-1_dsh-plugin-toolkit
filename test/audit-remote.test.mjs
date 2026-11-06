@@ -1,12 +1,32 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { auditRemoteTargets, parseRemoteTargets, remoteFinding } from '../lib/audit.mjs';
 import { auditRemote } from '../lib/remote.mjs';
 import { run } from '../lib/cli.mjs';
 
+const here = path.dirname(fileURLToPath(import.meta.url));
+
 function encode(text) {
   return Buffer.from(text, 'utf8').toString('base64');
+}
+
+/** Serve a checked-in fixture repository from memory, the way GitHub would. */
+function fixtureFiles(name) {
+  const root = path.join(here, 'fixtures', name);
+  const files = {};
+  const walk = (dir, prefix = '') => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) walk(path.join(dir, entry.name), relative);
+      else files[relative] = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+    }
+  };
+  walk(root);
+  return files;
 }
 
 function manifest(extra = {}) {
@@ -157,4 +177,24 @@ test('a malformed engines.dsh is reported as a range, not as a missing field', a
   const failure = report.failures.find((entry) => entry.check === 'engines.dsh');
   assert.match(failure.message, /not a semver range/u);
   assert.doesNotMatch(failure.message, /is missing/u);
+});
+
+test('the remote audit reads the same *.js glob as doctor, so an omitted client is not clean', async () => {
+  // The fixture's `"files": ["*.js"]` ships root-level JavaScript only; its
+  // `exports["./client"]` lives at lib/client.js, so npm would leave it out.
+  // `doctor --remote` and `audit --remote` read the same manifest, and both
+  // must report that omission instead of calling the repository clean.
+  const io = recorder();
+  const code = await run(['audit', '--remote', 'demo/glob-js', '--json'], io, {
+    fetchImpl: github({ 'demo/glob-js': fixtureFiles('glob-js') }),
+  });
+
+  assert.equal(code, 1);
+  const [report] = JSON.parse(io.lines.join('\n'));
+  assert.equal(report.target, 'demo/glob-js');
+  assert.deepEqual(
+    report.failures.map((failure) => failure.check),
+    ['files list'],
+  );
+  assert.match(report.failures[0].message, /files does not ship lib\/client\.js/u);
 });

@@ -344,9 +344,14 @@ installed package and will catch it.
 `doctor` collects every path the manifest points at — `exports`, the patch file,
 `dsh.client.entry`, `main`, and `types` — and checks that `files` covers the
 paths npm will not add on its own. A path can be covered by naming it, by naming
-a parent folder (`lib/` covers `lib/client.js`), or by a glob (`dist/*`). This
-check is about the manifest; `verify` is what proves the packed tarball actually
-contains the file.
+a parent folder (`lib/` covers `lib/client.js`), or by a glob (`dist/*`). Globs
+follow npm's own rules: `*` stays inside one path segment, so `*.js` ships
+root-level files only and does not cover `lib/client.js`; `dist/*` is shorthand
+for the whole `dist/` subtree, and `lib/*.js` covers only direct children of
+`lib`. `doctor --remote` and `audit --remote` run this same check against the
+manifest GitHub serves, so a glob that hides an exported file fails there too.
+This check is about the manifest; `verify` is what proves the packed tarball
+actually contains the file.
 
 **What you see.**
 

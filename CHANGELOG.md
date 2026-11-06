@@ -1,3 +1,24 @@
+## 0.20.7
+
+- **`dsh-plugin release --budget` rejects a value that is not a positive
+  number of seconds.** `--budget 8m`, `--budget 0`, `--budget -1` and a
+  missing value now stop during flag parsing with `--budget needs a positive
+  number of seconds`, exit `2`, and create neither a local nor a remote tag,
+  instead of pushing the tag and then waiting on a nonsensical interval. A
+  positive value still reaches the registry wait.
+
+## 0.20.6
+
+- **`dsh-plugin doctor` reads `files` globs the way `npm pack` does.** A
+  `"files": ["*.js"]` entry covers root-level JavaScript only, so a nested
+  `exports["./client"]` at `lib/client.js` now fails the files-list check with
+  that path named instead of passing `doctor` and disappearing from the tarball.
+  `lib/*.js`, `lib/*` and `lib/**` keep their npm meanings.
+- **The remote audit applies that same files-list check.** A repository whose
+  `"files": ["*.js"]` leaves its `exports["./client"]` out of the tarball now
+  produces a `files list` finding from `doctor --remote` and `audit --remote`,
+  and the audit exits 1 instead of printing `clean`.
+
 ## 0.20.5
 
 - **`dsh-plugin doctor` reads a `package.json` saved with a UTF-8 BOM.**

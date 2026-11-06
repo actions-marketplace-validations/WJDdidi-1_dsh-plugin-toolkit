@@ -1,0 +1,29 @@
+{
+  "name": "glob-js",
+  "version": "1.0.0",
+  "description": "a root-level *.js files glob does not ship a nested client export",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "*.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js"
+  }
+}
