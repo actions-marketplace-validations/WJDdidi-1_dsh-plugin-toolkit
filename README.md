@@ -903,7 +903,7 @@ The install reports success and nothing shows up. In this order:
 `release` runs the sequence in the order that fails cheapest first:
 
 1. Preflight (`doctor`) — stop before tagging anything.
-2. Refuse to run on a dirty tree, or if the tag already exists.
+2. Refuse to run on a dirty tree. If the tag already exists and points at the current commit, reuse it and resume; if it points somewhere else, stop with the tag's commit and HEAD, and print the `git tag -d` / `git push --delete` recovery.
 3. Create and push the tag, which starts the plugin's release workflow.
 4. Poll the registry until it actually serves that version, reporting each wait.
 5. Write the index entry with the publish time **the registry reports**, not the local clock. It waits for `time[version]` specifically: the abbreviated registry document has no `time` field, and an entry with a null timestamp is rejected by the market checker.
@@ -921,7 +921,19 @@ checks settled after 1s (1 look(s))
 merged
 ```
 
-Without `--pr` it prints the `git add` / `gh pr create` commands instead of running them; `--dry-run` prints the whole sequence before anything happens. A re-run after a failure is safe: the same version with the same publish time is a no-op.
+Without `--pr` it prints the `git add` / `gh pr create` commands instead of running them; `--dry-run` prints the whole sequence before anything happens. A re-run after a failure is safe: when the tag already points at HEAD it is reused rather than recreated, the release continues with the registry wait, and the same version with the same publish time is a no-op.
+
+If that tag points at another commit, the release does not move it. It exits `1`
+and names the tag, the commit it points at, HEAD, and the recovery:
+
+```
+dsh-plugin release stopped at tag
+  ✗ tag: plugin-v0.4.0 already exists and does not point at HEAD: tag plugin-v0.4.0 is at <tag-sha>, HEAD is <head-sha>. Delete the stale tag with `git tag -d plugin-v0.4.0` and `git push --delete origin plugin-v0.4.0`, then re-run release.
+```
+
+Run those two commands when the old tag really was a mistake, then release
+again. A tag at HEAD needs no separate `--resume`: it takes the resume path
+automatically.
 
 ### When nothing publishes for you
 
@@ -965,8 +977,14 @@ Honest list, so nobody plans around a feature that does not exist:
 ## Changelog
 
 [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release, including
-the `0.20.7` fix: `release --budget` rejects a value that is not a positive
-number of seconds — `8m`, `0`, `-1` or a missing value — with exit `2` before
+the `0.20.8` fixes: `release` resumes when `plugin-v<version>` already points at
+HEAD — reusing the tag and continuing to the registry wait instead of failing —
+and refuses a tag at another commit, printing the tag, the commit it points at,
+HEAD and the exact `git tag -d` / `git push --delete` recovery commands. A
+resume does not recreate the tag, so an index entry left by the aborted run does
+not block it. The `0.20.7` fix is recorded too: `release --budget` rejects a
+value that is not a positive number of seconds — `8m`, `0`, `-1` or a missing
+value — with exit `2` before
 any local or remote tag is created, instead of pushing the tag and then waiting.
 The `0.20.6` fixes are recorded too: `doctor` reads a `files` glob the way
 `npm pack` does, so a `"files": ["*.js"]` entry no longer hides a nested

@@ -1,3 +1,17 @@
+## 0.20.8
+
+- **`dsh-plugin release` resumes when the tag already points at HEAD.** A
+  publish that stopped after the tag was pushed — at the registry wait, or at a
+  later failure — can be re-run: the existing `plugin-v<version>` tag is reused
+  rather than recreated, and the release continues with the registry wait and
+  the index write. Because a resume creates no tag, the index entry left by the
+  previous attempt may be the only uncommitted change and does not block it.
+- **`dsh-plugin release` refuses a tag at another commit and prints the
+  recovery.** When `plugin-v<version>` exists but points somewhere other than
+  HEAD, the release exits `1` with the tag, the commit it points at, HEAD, and
+  the exact `git tag -d` and `git push --delete` commands that remove the stale
+  tag before a re-run.
+
 ## 0.20.7
 
 - **`dsh-plugin release --budget` rejects a value that is not a positive
