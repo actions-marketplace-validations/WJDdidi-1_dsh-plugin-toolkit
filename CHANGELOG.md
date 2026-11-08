@@ -1,5 +1,52 @@
-## 0.20.12
+## 0.20.14
 
+- **`doctor` reads the root export from code, not from prose.** A root module
+  whose only `apply` was inside a comment, string, template or regex literal
+  used to pass the `root export` check, while `verify --no-mount` rejected the
+  installed package. The check now removes those non-code spans, without
+  importing or running the plugin, and accepts only a real exported `apply`:
+  `export function apply`, `export const apply = ...`, `export { apply }` and
+  the CommonJS `module.exports` forms still pass, while
+  `// TODO: export function apply() {}` is a failure. The same helper backs
+  `doctor --remote`, so the checkout and the published repository agree.
+- **`doctor` and `verify --no-mount` are pinned to one root-export verdict at
+  the process boundary.** A regression test spawns the shipped CLI on the
+  comment-only fixture and requires both commands to exit `1`, so the source
+  parser and the installed import cannot disagree again. The README and
+  `docs/repair.md` now state the exact rule: the resolved root is read as
+  source, comments and string/template/regex contents are removed, and only a
+  real `export function apply`, `export const apply = ...` (also `let` and
+  `var`), `export { apply }` (including aliases), `exports.apply = ...` or
+  `module.exports = { apply }` passes.
+
+## 0.20.13
+
+- **The compatibility sample says which snapshot it answers for.** The README
+  now names the eight reports behind "will this plugin install on my DSH?" and
+  states that the quoted `incompatible` line comes from the frozen 0.1.3 sample
+  under `examples/compatibility-sample/`, not from whatever the upstream
+  repository's default branch contains today. The sample README explains why it
+  keeps a `## Requirements` heading even though the upstream README is
+  localized: it isolates the host-range verdict, while a live audit also runs
+  the README check and can add a `readme` failure to the same row.
+- **A leading `~` expands in every user-named path, not just `--log`.** On
+  `cmd` and PowerShell the shell leaves the tilde literal, so
+  `init '~/my-panel' --name my-panel` used to create a directory literally
+  named `~` in the current folder, and `doctor '~/my-panel'` then looked in
+  the same wrong place. Both the CLI and the exported `init`/`doctor`/`fix`/
+  `verify`/`dev`/`release` functions now expand `~/` and `~\` before any
+  filesystem access, as do `--home`, `--market`, `--dest`, `--from`,
+  `--patch-dir`, `--patch`, `--log` and `--index`. The scaffold lands in
+  `$HOME/my-panel`, `doctor` exits `0` on it, and no literal `~` folder is
+  created.
+- **Major-only comparator ranges get npm's boundaries.** `audit --remote
+  <owner/repo> --host <version>` filled a missing minor with 0 before deciding
+  the edge of `<=1`, `>1` and hyphen ranges such as `1.2.3 - 2`, so it called
+  1.2.3 compatible with `<=1` and incompatible with `>1` — the reverse of what
+  the installer does. The same answer is used by `doctor --remote`, `--json`
+  and `--patch-dir`. The older `~>` spelling of `~` is now parsed too, instead
+  of being reported as unknown. Regression tests pin all four forms against npm
+  semver.
 - **`doctor --remote` reads the README the way a checkout does.** A published
   repository whose README has no `## Requirements` heading, or whose
   Requirements section omits the `engines.dsh` range it declares, used to print
@@ -24,6 +71,22 @@
   patch that was declared. It now reports `dsh field: dsh.bundle is missing` and
   exits `1`; the failure is also carried into `audit --remote`, and a clean
   repository still exits `0`.
+- **`fix --remote` can aim the range at the host that rejected the install.**
+  `fix <owner>/<repo> --remote --engines --host 0.3.0 --patch repair.patch`
+  plans the same `>=0.3.0 <1.0.0` range that `fix . --engines --host 0.3.0
+  --write` writes in a checkout. The remote planner and the local writer share
+  one decision, so the patch both accepts the host and rejects the next major,
+  prints why, and a non-semver `--host` exits `2` before creating a patch file.
+- **`release` refuses a bad host range instead of throwing at the index step.**
+  A malformed `engines.dsh` that reached the market-entry builder used to escape
+  as an exception, outside the normal `{ ok: false, stage, failures }` result.
+  `release` now reports that problem in the `index` stage and writes nothing; a
+  manifest with the same bad range is already stopped by the preflight, so the
+  command returns before a tag is created. The regression test checks that the
+  index file is byte-for-byte unchanged and that the registry is never called.
+
+## 0.20.12
+
 - **`dsh-plugin fix <owner>/<repo> --remote` treats an already-correct range as
   success.** When `package.json` already declares an `engines.dsh` range that
   clears the check, the command still prints `ok engines.dsh is already

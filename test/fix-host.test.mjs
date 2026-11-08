@@ -4,6 +4,7 @@
  * says that in words so the author does not have to reverse-engineer the diff.
  */
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -124,4 +125,60 @@ test('an invalid --host is refused instead of writing a guessed range', async ()
   assert.equal(code, 1);
   assert.match(io.lines.join('\n'), /not a semver host version/u);
   assert.equal(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'), before);
+});
+
+test('the host-targeted remote patch applies to a checkout and that written range is the acceptance range', async (t) => {
+  const raw = `${JSON.stringify(
+    {
+      name: 'demo-plugin',
+      version: '1.2.3',
+      engines: { node: '>=18' },
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+      files: ['index.js', 'README.md'],
+    },
+    null,
+    2,
+  )}\n`;
+  const root = scratch();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const checkout = path.join(root, 'checkout');
+  fs.mkdirSync(checkout, { recursive: true });
+  const manifestPath = path.join(checkout, 'package.json');
+  fs.writeFileSync(manifestPath, raw);
+  const patchFile = path.join(root, 'repair.patch');
+  const io = recorder();
+
+  const code = await run(
+    ['fix', 'demo/plugin', '--remote', '--engines', '--host', '0.3.0', '--patch', patchFile],
+    io,
+    { fetchImpl: github(raw) },
+  );
+
+  assert.equal(code, 0);
+  execFileSync('git', ['apply', patchFile], { cwd: checkout, stdio: 'pipe' });
+
+  const written = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(written.engines.dsh, '>=0.3.0 <1.0.0');
+  assert.equal(written.engines.node, '>=18', 'the node engine is not the fixer’s to remove');
+  assert.equal(satisfiesRange(written.engines.dsh, '0.3.0'), true, `the host is not accepted by ${written.engines.dsh}`);
+  assert.equal(satisfiesRange(written.engines.dsh, '1.0.0'), false, `the next major is accepted by ${written.engines.dsh}`);
+  assert.match(io.lines.join('\n'), /host 0\.3\.0 is inside/u);
+});
+
+test('a remote --host that is not semver is refused before a patch file is created', async (t) => {
+  const raw = `${JSON.stringify({ name: 'demo-plugin', version: '1.2.3', engines: { node: '>=18' } }, null, 2)}\n`;
+  const root = scratch();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const patchFile = path.join(root, 'repair.patch');
+  const io = recorder();
+
+  const code = await run(
+    ['fix', 'demo/plugin', '--remote', '--engines', '--host', '0.3', '--patch', patchFile],
+    io,
+    { fetchImpl: github(raw) },
+  );
+
+  assert.equal(code, 2);
+  assert.match(io.lines.join('\n'), /not a semver host version/u);
+  assert.equal(fs.existsSync(patchFile), false, 'a refused host still created a patch file');
 });

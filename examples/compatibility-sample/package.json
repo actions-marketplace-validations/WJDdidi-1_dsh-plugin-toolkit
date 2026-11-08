@@ -1,7 +1,7 @@
 {
   "name": "dsh-resume",
   "version": "0.1.3",
-  "description": "A checked-in copy of the manifest the README audits: a real plugin whose engines.dsh range stops before DSH 0.2.0.",
+  "description": "A frozen 0.1.3 snapshot of the manifest the README audits, keeping the fields that decide compatibility: a real plugin whose engines.dsh range stops before DSH 0.2.0.",
   "type": "module",
   "main": "index.js",
   "exports": {

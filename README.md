@@ -133,6 +133,8 @@ next: npm install && npm test && npm run doctor
 
 What you get is not a snippet: it is a plugin whose `doctor` already passes (`engines.dsh`, the patch file, the `files` list), with a client bundle that registers a sidebar tab, a testkit test for it, and a CI workflow that runs both. `init` refuses a directory that is not empty unless you pass `--force`, and refuses a name npm would refuse — those are the two mistakes that cost the most time later.
 
+Every command that takes a path expands a leading `~` before touching the filesystem. The tool, not the shell, expands `~` for these arguments: `cmd` and PowerShell pass `"~/my-panel"` through literally, while a POSIX shell usually expands it first. `init '~/my-panel' --name my-panel` writes into your home directory (the same files `init ~/my-panel` writes on a POSIX shell), and `doctor '~/my-panel'` reads it back. The Windows spelling `~\my-panel` works too; a directory literally named `~` is never created.
+
 ## Where it lives
 
 The checker is docked **under the conversation**, above the input bar: a single
@@ -443,11 +445,12 @@ verdict, and the remaining entries are reported without another request.
 
 ### Will this plugin install on my DSH?
 
-The seven compatibility reports all end with the same question. Add `--host
-<version>` to a remote audit and it answers that question for one repository.
-This is a real run against `L3n3L/dsh-resume`, a plugin whose declared range
-stops before DSH 0.2.0, checked against the `0.2.2-alpha.3` canary from the
-reports:
+The eight compatibility reports, from four repositories, all end with the same
+question. Add `--host <version>` to a remote audit and it answers that question
+for one repository. This is the output for `L3n3L/dsh-resume`, a real plugin
+whose declared range stops before DSH 0.2.0, checked against the
+`0.2.2-alpha.3` canary from the reports. The checked-in sample is a frozen 0.1.3
+snapshot, so the line stays true as the upstream repository changes:
 
 ```sh
 $ dsh-plugin audit --remote L3n3L/dsh-resume --host 0.2.2-alpha.3
@@ -458,9 +461,11 @@ summary: 1 repository — 0 clean, 1 failing (1 problem), 0 unreadable, 0 rate-l
 
 The verdict comes first: `incompatible` means the range in `package.json` does
 not accept the host, so the installer rejects the plugin before it unpacks it.
-This run exits `1`. The same answer is reproducible without a GitHub request —
-the manifest is checked in under `examples/compatibility-sample/`, and this
-command feeds it through the real CLI path:
+This run exits `1`. The same answer is reproducible without a GitHub request:
+the checked-in snapshot under `examples/compatibility-sample/` keeps the 0.1.3
+manifest fields that decide compatibility, and its `## Requirements` heading
+isolates the host-range answer. This command feeds that snapshot through the
+real CLI path:
 
 ```sh
 $ node scripts/compatibility-sample.mjs
@@ -468,7 +473,11 @@ $ node scripts/compatibility-sample.mjs
 
 (`npm run compatibility` runs the same script.) The test suite runs that
 command and compares its output with the block above, so the sample cannot
-drift from the formatter or from the README.
+drift from the formatter or from the README. Running
+`dsh-plugin audit --remote L3n3L/dsh-resume --host 0.2.2-alpha.3` without the
+sample audits the repository's current default branch instead; a README or
+manifest change since 0.1.3 can add another `readme` or manifest failure to the
+same row.
 
 The line carries the range `package.json` declares and one of `compatible`,
 `incompatible`, or `unknown` against that host version. `unknown` is the honest
@@ -676,6 +685,8 @@ the diff in the terminal.
 | `files list` | Every path `package.json` points at (`exports`, patch, client) must be covered by `files` |
 | `root export` | The loader imports the bare package name; if that module is the CLI (or exports no `apply`), the row mounts nothing while the install reports success |
 
+The `root export` check is a source check, not an install. `doctor` resolves the module the loader imports — `exports["."]` when it is a string or a conditions object (`default`, `import`, `require`, `node`, `module-sync`), otherwise `main` — then removes comments and the contents of string, template and regex literals before looking for a real export. It accepts `export function apply`, `export async function apply`, `export const apply = ...` (also `let` and `var`), `export { apply }` (including `export { helper as apply }`), `exports.apply = ...`, and an `apply` property in `module.exports = { ... }`. A comment such as `// TODO: export function apply() {}` is not an export, and `doctor` never imports or runs the plugin to decide. `verify --no-mount` installs the tarball and imports that same module, so it reaches the same verdict; `npm test` spawns the shipped CLI on the comment-only fixture and requires both commands to exit `1`.
+
 Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged. `doctor --remote` and `audit --remote` run the same manifest and README checks (`name`, `version`, `engines.dsh`, `dsh field`, `files list`, `readme`) against the `package.json` and README GitHub serves, then check the files the manifest points at, so a bad package name or a README with no Requirements heading is reported before a clone or install. The `name` check is pinned at the process boundary: `npm test` expects the shipped CLI to reject a missing, empty and malformed name (`accepted=0/3`) and to accept a valid plain or scoped control.
 
 ## Repair what `doctor` finds
@@ -813,11 +824,14 @@ $ git apply /tmp/dsh-run-guard-engines.patch
 
 `--patch` creates parent directories and refuses to replace an existing file
 unless you pass `--force`; its output names the file, and the repository it read
-is still untouched. The same host-aware plan works with `--patch`, and
-`audit --remote --host <version> --patch-dir <dir>` writes host-targeted repairs
-for a whole list. `git apply --check` is the dry run: it fails before changing
-anything if the manifest moved since the diff was printed. Commit the applied
-change as you would any other edit.
+is still untouched. The same host-aware plan works with `--patch`:
+`fix <owner>/<repo> --remote --engines --host 0.3.0 --patch repair.patch` plans
+`>=0.3.0 <1.0.0` and prints why. After cloning, `fix . --engines --host 0.3.0
+--write` applies that same range; either path writes one that accepts the host
+and rejects the next major. `audit --remote --host <version> --patch-dir <dir>`
+writes host-targeted repairs for a whole list. `git apply --check` is the dry
+run: it fails before changing anything if the manifest moved since the diff was
+printed. Commit the applied change as you would any other edit.
 
 Then run `npx dsh-plugin-toolkit@latest doctor .` in the checkout. Both the
 remote and checkout commands now read the README text, so a `readme` line names
@@ -878,10 +892,13 @@ $ npx dsh-plugin-toolkit explain "plugin install failed" ./my-panel
 The same checkout argument works after the log:
 `dsh-plugin explain --log ~/.dsh/logs/install.log ./my-panel`.
 
-On Windows, `cmd` and PowerShell leave the tilde alone:
-`--log ~\.dsh\logs\install.log` expands exactly like
-`--log ~/.dsh/logs/install.log`. A log that cannot be read exits `2` and names
-the resolved absolute path it tried, never a directory literally named `~`.
+On Windows, `cmd` and PowerShell leave the tilde alone. Every user-named path
+expands it: the directory argument of `init`, `doctor`, `fix`, `verify`, `dev`
+and `release`, and the `--home`, `--market`, `--dest`, `--from`, `--patch-dir`,
+`--patch`, `--log` and `--index` flags. `--log ~\.dsh\logs\install.log`
+expands exactly like `--log ~/.dsh/logs/install.log`. A log that cannot be read
+exits `2` and names the resolved absolute path it tried, never a directory
+literally named `~`.
 
 Text it does not recognise exits `2` instead of guessing: a wrong diagnosis
 sends you editing the wrong file. A log with no known cause also exits `2` and

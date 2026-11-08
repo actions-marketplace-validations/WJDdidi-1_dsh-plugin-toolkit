@@ -17,12 +17,15 @@ and repeat until it exits `0`. That is the whole loop.
 `doctor --remote owner/repo` prints the same lines for a repository you have not
 cloned, but it cannot edit anything. For a missing host range, `fix owner/repo
 --remote --patch repair.patch` saves the `engines.dsh` diff without a checkout;
-apply it after cloning (or paste it into a pull request). The command creates
-parent directories and refuses to replace an existing file unless `--force` is
-passed. A manifest whose range already clears the check is a success: the
-command prints `ok engines.dsh is already ...; nothing to apply` and exits `0`
-without writing a diff or patch file. For every other check, clone the
-repository and run the commands here against the checkout.
+apply it after cloning (or paste it into a pull request). Add `--engines --host
+<version>` to aim that patch at the host that rejected the install; once the
+repository is cloned, `fix . --engines --host <version> --write` applies the
+same range locally. The command creates parent directories and refuses to
+replace an existing file unless `--force` is passed. A manifest whose range
+already clears the check is a success: the command prints `ok engines.dsh is
+already ...; nothing to apply` and exits `0` without writing a diff or patch
+file. For every other check, clone the repository and run the commands here
+against the checkout.
 
 To triage a list of repositories before cloning any of them, pass `--host` to
 the remote audit. It compares each declared `engines.dsh` with the DSH version
@@ -384,10 +387,19 @@ export function apply(ctx) {
 }
 ```
 
-Add `index.js` to `files`. `export const apply = ...` and
-`export { apply }` are also recognized. A plugin that only inserts a subpath
-patch and has no root module does not need a root export; do not point the root
-at the CLI to satisfy the field.
+Add `index.js` to `files`. `doctor` accepts `export function apply`,
+`export async function apply`, `export const apply = ...` (also `let` and
+`var`), `export { apply }` (including `export { helper as apply }`),
+`exports.apply = ...`, and an `apply` property in
+`module.exports = { ... }`. Comments and the contents of string, template and
+regex literals are not exports: a `// TODO: export function apply() {}` does not
+satisfy the check. `doctor` reads the source, not the installed module, so it
+never imports or runs the plugin while asking this question.
+`verify --no-mount` installs and imports the same module, so both commands exit
+`1` on a comment-only root; `npm test` spawns the shipped CLI on that fixture
+and pins the agreement. A plugin that only inserts a subpath patch and has no
+root module does not need a root export; do not point the root at the CLI to
+satisfy the field.
 
 If the root file named by `main`/`exports["."]` does not exist at all, `doctor`
 has no source to inspect and does not report this check — `verify` imports the
