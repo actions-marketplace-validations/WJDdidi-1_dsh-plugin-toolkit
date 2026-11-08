@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -45,12 +46,20 @@ const cleanFiles = {
   'package.json': JSON.stringify(manifest()),
   'index.js': 'export function apply() {}\n',
   'cordis.patch.yml': '- insert: []\n',
-  'README.md': '# clean\n\nRequires dsh >=0.2.0.\n',
+  'README.md': '# clean\n\n## Requirements\n\nRequires dsh >=0.2.0.\n',
 };
 
 const brokenFiles = {
   ...cleanFiles,
   'package.json': JSON.stringify(manifest({ engines: undefined })),
+};
+
+// The manifest is valid, so only the README check can fail this repository.
+// Its README states the host range but has no Requirements heading, the same
+// repository `doctor --remote` rejects in test/doctor-remote-readme.test.mjs.
+const noRequirementsFiles = {
+  ...cleanFiles,
+  'README.md': '# probe\n\nRequires dsh >=0.2.0.\n',
 };
 
 /**
@@ -126,6 +135,36 @@ test('audit --remote --json exits 0 when every repository is clean', async () =>
   assert.deepEqual(reports, [
     { target: 'demo/clean', version: '1.2.3', hostRange: '>=0.2.0', failures: [], notes: [] },
   ]);
+});
+
+test('audit --remote --from carries a missing Requirements heading into the failing row and JSON finding', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-audit-readme-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const list = path.join(dir, 'repos.txt');
+  fs.writeFileSync(list, 'acme/probe\n');
+  const fetchImpl = github({ 'acme/probe': noRequirementsFiles });
+
+  const text = recorder();
+  const textCode = await run(['audit', '--remote', '--from', list], text, { fetchImpl });
+  assert.equal(textCode, 1);
+  const output = text.lines.join('\n');
+  assert.match(output, /failing\s+acme\/probe\s+— readme: README\.md has no Requirements section/u);
+  assert.match(output, /summary: 1 repository — 0 clean, 1 failing \(1 problem\), 0 unreadable/u);
+
+  const json = recorder();
+  const jsonCode = await run(['audit', '--remote', '--from', list, '--json'], json, { fetchImpl });
+  assert.equal(jsonCode, 1);
+  const [finding] = JSON.parse(json.lines.join('\n'));
+  assert.equal(finding.target, 'acme/probe');
+  assert.equal(finding.version, '1.2.3');
+  assert.equal(finding.hostRange, '>=0.2.0');
+  assert.deepEqual(finding.failures, [
+    {
+      check: 'readme',
+      message: 'README.md has no Requirements section, so users cannot tell which host it needs',
+    },
+  ]);
+  assert.deepEqual(finding.notes, []);
 });
 
 test('a rate-limited read is a note and a rate-limited repository, never a false pass', async () => {

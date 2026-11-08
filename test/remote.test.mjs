@@ -36,7 +36,7 @@ const plugin = {
   'package.json': JSON.stringify(manifest()),
   'index.js': 'export function apply() {}\n',
   'cordis.patch.yml': '- insert: []\n',
-  'README.md': '# demo\n\nRequires dsh >=0.2.0.\n',
+  'README.md': '# demo\n\n## Requirements\n\nRequires dsh >=0.2.0.\n',
 };
 
 test('parseTarget accepts owner/repo, a URL, and a .git URL', () => {
@@ -55,6 +55,43 @@ test('a repository that would load passes every remote check', async () => {
   const { fetchImpl } = github(plugin);
   const report = await auditRemote('demo/plugin', { fetchImpl });
   assert.deepEqual(report.failures, []);
+});
+
+test('an empty dsh field fails the same check local doctor runs, and the CLI exits 1', async () => {
+  const files = { ...plugin, 'package.json': JSON.stringify(manifest({ dsh: {} })) };
+  const { fetchImpl } = github(files);
+  const report = await auditRemote('demo/plugin', { fetchImpl });
+  assert.deepEqual(
+    report.failures.map((entry) => entry.check),
+    ['dsh field'],
+  );
+  assert.match(report.failures[0].message, /^dsh\.bundle is missing/u);
+
+  const lines = [];
+  const io = { log: (line) => lines.push(String(line)), error: (line) => lines.push(String(line)) };
+  const code = await run(['doctor', '--remote', 'demo/plugin'], io, { fetchImpl });
+  assert.equal(code, 1);
+  assert.match(lines.join('\n'), /dsh field: dsh\.bundle is missing/u);
+});
+
+test('a remote manifest with a missing, empty or invalid name fails the same name check', async () => {
+  for (const name of [undefined, '', 'My Plugin!']) {
+    const files = { ...plugin, 'package.json': JSON.stringify(manifest({ name })) };
+    const { fetchImpl } = github(files);
+    const report = await auditRemote('demo/plugin', { fetchImpl });
+    assert.deepEqual(
+      report.failures.map((entry) => entry.check),
+      ['name'],
+      JSON.stringify(name),
+    );
+    assert.match(report.failures[0].message, /name/u);
+
+    const lines = [];
+    const io = { log: (line) => lines.push(String(line)), error: (line) => lines.push(String(line)) };
+    const code = await run(['doctor', '--remote', 'demo/plugin'], io, { fetchImpl });
+    assert.equal(code, 1);
+    assert.match(lines.join('\n'), /name: .*name/u);
+  }
 });
 
 test('a manifest without engines.dsh fails with the wording the installer uses', async () => {

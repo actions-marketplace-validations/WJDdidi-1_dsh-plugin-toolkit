@@ -192,7 +192,7 @@ expectSnapshot(panel.html(), '__snapshots__', 'panel');   // throws with the ele
 await panel.unmount();
 ```
 
-First run writes nothing: it tells you to re-run with `UPDATE_SNAPSHOTS=1`, so a baseline is always a decision, never a side effect.
+First run writes nothing: it tells you to re-run with `UPDATE_SNAPSHOTS=1`, so a baseline is always a decision, never a side effect. That rerun writes the normalised HTML and returns `{ status: 'written' }`; later runs return `same` or fail with the element that moved.
 
 ### Check what assistive tech sees
 
@@ -311,6 +311,17 @@ Without `--host` the loaded column is `?`, because guessing would be worse than
 saying nothing. Only packages that declare a `dsh` field are audited — the rest of
 `node_modules` is ordinary dependencies, and auditing those is noise.
 
+An installed package whose `package.json` cannot be read is the exception: the
+`dsh` field that would mark it as a plugin is in the file that failed to parse.
+If its name is still in `dsh.profile.bundles`, `audit` reports a `manifest`
+failure naming the unreadable `package.json` and exits `1` instead of treating
+the folder as an ordinary dependency. A truncated manifest from an interrupted
+install therefore cannot make the plugin disappear from the report, and a valid
+sibling plugin is still listed on the same run. The exception stays narrow: a
+damaged `package.json` in a package that is neither in `dsh.profile.bundles` nor
+readable enough to expose a `dsh` field is still an ordinary dependency and is
+skipped, so one broken transitive install does not fail every audit.
+
 ## Edit a plugin that is already installed
 
 The host already swaps a rebuilt bundle without a page reload: it watches each plugin's entry artifact and reports a `rebuilt` frame on `/plugins/events`. `dev` puts the new file where the host is looking, then **proves** the frame arrived instead of asking you to check by eye.
@@ -366,8 +377,9 @@ forgets `client.js` passes it and fails only after `npm i`.
 
 `command: doctor` stops at the manifest checks (fast, no install), and
 `command: index` audits `market/index.json` instead, failing on any version whose
-`engines.dsh` is missing or is not a semver range. Pin `version:` if you would
-rather not track the latest release.
+`engines.dsh` is missing or is not a semver range (a malformed value such as
+`>=banana`, or a single pinned version such as `0.2.0`, both fail). Pin
+`version:` if you would rather not track the latest release.
 
 ## Check a plugin you have not cloned
 
@@ -395,8 +407,12 @@ file. Reading `package.json` over the API is enough to name it.
 
 What it can see, and what it cannot:
 
-- Manifest checks (`engines.dsh`, `files`, `dsh.client`, `exports`) run on the
-  real `package.json`.
+- Manifest checks (`engines.dsh`, `dsh field`, `files`, `dsh.client`,
+  `exports`) run on the real `package.json`.
+- README checks (`readme`) run on the text GitHub serves: the README must have
+  a `Requirements` heading and must state the host range `package.json`
+  declares. A repository whose checkout fails `readme` fails the remote check
+  too, with the same sentence.
 - File checks (does `exports["./client"]` point at a file that exists, does the
   root export `apply`) need the tree. A package that runs `prepack`,
   `prepublishOnly`, `prepare` or `build` publishes files it does not commit, so
@@ -458,8 +474,11 @@ The line carries the range `package.json` declares and one of `compatible`,
 `incompatible`, or `unknown` against that host version. `unknown` is the honest
 answer for a missing or malformed range — there is nothing to compare — while a
 range that excludes the host is `incompatible`, counted as failing, and exits
-`1`. The same flag works in the batch mode, so one `--from` run answers the
-whole list:
+`1`. npm's pre-release rule is part of the answer: `>=0.2.0` does not accept
+`0.2.2-alpha.3`, because a range only opts into a pre-release when it names one
+of the same `major.minor.patch`. A canary host can therefore be `incompatible`
+with a range that will accept the final release. The same flag works in the
+batch mode, so one `--from` run answers the whole list:
 
 ```sh
 $ dsh-plugin audit --remote --from repos.txt --host 0.2.2-alpha.3
@@ -490,7 +509,13 @@ summary: 4 repositories — 1 clean, 1 failing (1 problem), 0 unreadable, 2 rate
 
 The parenthesised count is the number of failed checks, not the number of failing
 repositories: one repository that fails both `engines.dsh` and its client
-declaration prints `1 failing (2 problems)`.
+declaration prints `1 failing (2 problems)`. A repository whose `package.json`
+has an empty `dsh` field and no `dsh.bundle.patch` is `failing` here too: the
+batch runs the same `dsh field` check as `doctor`, and the `--json` finding
+carries that failure even though no patch path was declared to check. A README
+with no `Requirements` heading is treated the same way: the batch asks the same
+`readme` question as a checkout, so the row is `failing`, the `--json` finding
+names `readme`, and the run exits `1` instead of reporting the repository clean.
 
 The command exits `1` when any repository is failing, unreadable, or
 rate-limited, and `0` only when every repository in the list is clean. `--from`
@@ -579,9 +604,12 @@ $ dsh-plugin audit --remote --from repos.txt --patch-dir repairs/
 
 It creates the directory and writes one `owner__repo.patch` for every
 repository whose `engines.dsh` check fails, with the same diff `fix --remote
---patch` produces. Repositories that are clean, unreadable, or need a repair
-the tool cannot make automatically are skipped. The repository itself is still
-only read, and `--force` replaces a patch that is already there.
+--patch` produces. With `--host <version>`, the repair is aimed at that host, so
+a repository whose valid range merely excludes the host is repaired too; a
+repository that already accepts the host is skipped even when it is in the same
+batch. Repositories that are clean, unreadable, or need a repair the tool cannot
+make automatically are skipped. The repository itself is still only read, and
+`--force` replaces a patch that is already there.
 
 ### The 3 November list
 
@@ -638,8 +666,9 @@ the diff in the terminal.
 
 | Check | Why it matters |
 | --- | --- |
+| `name` | npm publishes and installs by this field; a missing, empty or non-npm name would otherwise pass `doctor` and fail later at publish or `npm pack` |
 | `version` | The tag is built from it; a malformed version produces a tag nobody can install |
-| `engines.dsh` | The market index copies this into every version entry. Missing it, or a value that is not a semver range, fails the index PR |
+| `engines.dsh` | The market index copies this into every version entry. Missing it, or a value that is not a semver range (including a pinned version such as `0.2.0`), fails the index PR |
 | `readme` | A `Requirements` section that states the declared range, so an install failure is predictable |
 | `dsh field` | `dsh.bundle.patch` must exist for the host to load the plugin |
 | `patch file` | The path declared above must be a real file |
@@ -647,7 +676,7 @@ the diff in the terminal.
 | `files list` | Every path `package.json` points at (`exports`, patch, client) must be covered by `files` |
 | `root export` | The loader imports the bare package name; if that module is the CLI (or exports no `apply`), the row mounts nothing while the install reports success |
 
-Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged.
+Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged. `doctor --remote` and `audit --remote` run the same manifest and README checks (`name`, `version`, `engines.dsh`, `dsh field`, `files list`, `readme`) against the `package.json` and README GitHub serves, then check the files the manifest points at, so a bad package name or a README with no Requirements heading is reported before a clone or install. The `name` check is pinned at the process boundary: `npm test` expects the shipped CLI to reject a missing, empty and malformed name (`accepted=0/3`) and to accept a valid plain or scoped control.
 
 ## Repair what `doctor` finds
 
@@ -733,9 +762,9 @@ checkout.
 
 Start from the repository name in the hub issue: `PrismLean/dsh-run-guard`, one
 of the repositories in the 3 November install-failure audit. You do not need a
-checkout to learn what is wrong. `doctor --remote` reads `package.json` and the
-files it points at through the GitHub API and prints the same verdict it would
-give a folder:
+checkout to learn what is wrong. `doctor --remote` reads `package.json`, the
+README and the files the manifest points at through the GitHub API and prints
+the same verdict it would give a folder:
 
 ```sh
 $ npx dsh-plugin-toolkit@latest doctor --remote PrismLean/dsh-run-guard
@@ -766,6 +795,11 @@ dsh-plugin fix: would write engines.dsh ">=0.2.0" (was missing) in PrismLean/dsh
     remote repositories are read-only; nothing written; apply this diff in your checkout
 ```
 
+When `package.json` already declares a range that clears the check, there is
+nothing to apply: the command prints `ok engines.dsh is already "<range>";
+nothing to apply` and exits `0`, the same no-op as `fix --engines` on a
+checkout. No diff and no patch file is written.
+
 To apply it, clone the repository, save that diff with `--patch`, and apply it
 in the checkout:
 
@@ -785,15 +819,15 @@ for a whole list. `git apply --check` is the dry run: it fails before changing
 anything if the manifest moved since the diff was printed. Commit the applied
 change as you would any other edit.
 
-Then run `npx dsh-plugin-toolkit@latest doctor .` in the checkout. A checkout
-also reads the README text, so it can name a follow-up the remote read could
-not see — for `PrismLean/dsh-run-guard`, the README still has no Requirements
-section. [Repair a failed
+Then run `npx dsh-plugin-toolkit@latest doctor .` in the checkout. Both the
+remote and checkout commands now read the README text, so a `readme` line names
+the same follow-up in either place — for `PrismLean/dsh-run-guard`, the README
+still has no Requirements section. [Repair a failed
 install](https://github.com/WJDdidi-1/dsh-plugin-toolkit/blob/main/docs/repair.md#readme)
-has the smallest edit for each remaining line. Once the branch is pushed,
-`doctor --remote PrismLean/dsh-run-guard` no longer reports `engines.dsh`. If
-the diff does not apply because the file changed, run the remote fixer again —
-it always starts from the current `package.json`.
+has the smallest edit for each remaining line. Once the branch with that README
+edit is pushed, `doctor --remote PrismLean/dsh-run-guard` no longer reports
+`engines.dsh` or `readme`. If the diff does not apply because the file changed,
+run the remote fixer again — it always starts from the current `package.json`.
 
 ## When an install fails
 
@@ -844,6 +878,11 @@ $ npx dsh-plugin-toolkit explain "plugin install failed" ./my-panel
 The same checkout argument works after the log:
 `dsh-plugin explain --log ~/.dsh/logs/install.log ./my-panel`.
 
+On Windows, `cmd` and PowerShell leave the tilde alone:
+`--log ~\.dsh\logs\install.log` expands exactly like
+`--log ~/.dsh/logs/install.log`. A log that cannot be read exits `2` and names
+the resolved absolute path it tried, never a directory literally named `~`.
+
 Text it does not recognise exits `2` instead of guessing: a wrong diagnosis
 sends you editing the wrong file. A log with no known cause also exits `2` and
 lists the causes it looked for.
@@ -858,7 +897,7 @@ ok  packed 5 file(s), installed the tarball, mounted the panel
     My panel This panel came from dsh-plugin init. Clicks: 0
 ```
 
-It packs, installs that tarball into a throwaway directory, then mounts the bundle **from the installed copy**. When the `files` list drops the panel:
+It packs, installs that tarball into a throwaway directory, then mounts the bundle **from the installed copy**. A bundle that only inserts a subpath patch needs no root module; in that case there is nothing to import, and the success line says it skipped the host import instead of claiming one ran. When the `files` list drops the panel:
 
 ```sh
 $ npx dsh-plugin-toolkit verify .
@@ -883,7 +922,9 @@ The install reports success and nothing shows up. In this order:
    node -e "import('my-plugin').then((m) => console.log(typeof m.apply))"
    ```
    `function` is what the loader needs. `undefined` means `exports["."]` points
-   at the CLI — `0.8.0` of this tool shipped exactly that.
+   at the CLI — `0.8.0` of this tool shipped exactly that. A root written as a
+   conditions object (`{ "import": "./index.js" }`) is resolved before the
+   check, and `main` is only the fallback when no root export exists.
 3. **Does the tarball ship the panel?** `dsh-plugin verify .` installs what users
    get and mounts it. `doctor` cannot see this.
 4. **Is the patch row shaped right?** `cordis.patch.yml` needs one `- insert:`
@@ -961,9 +1002,13 @@ merged
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Done, or nothing to complain about |
+| 0 | Done, or nothing to complain about — including `fix --remote` when `engines.dsh` is already a valid range |
 | 1 | A check failed, an installed plugin was not loaded by the running app, or the release stopped (the failing stage is named) |
-| 2 | Unknown command |
+| 2 | Unknown command, invalid usage, or a remote request that could not be completed |
+
+`fix <owner>/<repo> --remote` exits `0` both when it prints a diff for a missing
+`engines.dsh` and when the manifest already declares a range that clears the
+check; the second case prints `ok ... nothing to apply` and writes no diff.
 
 ## What is not here yet
 
@@ -974,10 +1019,69 @@ Honest list, so nobody plans around a feature that does not exist:
 - **`dev --host` is not covered by CI.** The unit tests use a synthetic event stream; the live path is exercised by hand against a running app, on macOS only.
 - **No Windows testing of the `dev` file watcher.** The Windows CI job runs the whole suite, but the watcher is only asserted against a temp directory, not a real profile.
 
+## FAQ
+
+**Do I need the app running to check a plugin?**
+No. `doctor` reads a folder and writes nothing, `mount` renders a client bundle
+in Node, and `verify` packs the plugin and installs that tarball into a
+temporary directory. None of them needs the running app.
+
+```sh
+npx dsh-plugin-toolkit@latest verify .
+```
+
+**Will `doctor --fix` rewrite my `package.json`?**
+Only with `--write`. Without it the command prints the plan and stops; with it,
+it applies the edits in the plan and runs the checks again.
+
+**`doctor` passes, but the panel still does not appear. What next?**
+`doctor` checks the manifest and source without executing the plugin. `verify`
+packs the plugin, installs the tarball and mounts the bundle, so it catches a
+root module or client bundle that throws when the loader loads it. If `verify`
+passes too, work through [When the panel does not
+appear](#when-the-panel-does-not-appear).
+
+**Can I check a plugin before cloning it?**
+Yes. `doctor --remote owner/repo` reads the repository's `package.json`, README
+and the files it declares over the GitHub API, and writes nothing:
+
+```sh
+npx dsh-plugin-toolkit@latest doctor --remote V1ki/dsh-plugin-subscriptions
+```
+
+**Will a plugin install on the DSH version I run?**
+Add `--host <version>` to a remote audit. It prints `compatible`,
+`incompatible` or `unknown` against that host, and an `incompatible` result is
+counted as failing and exits `1`:
+
+```sh
+npx dsh-plugin-toolkit@latest audit --remote L3n3L/dsh-resume --host 0.2.2-alpha.3
+```
+
+**What should CI run?**
+The composite action's default `command` is `verify`, the only check that reads
+the tarball. Use `command: doctor` for a fast manifest-only gate, or
+`command: index` to audit the market index:
+
+```yaml
+- uses: WJDdidi-1/dsh-plugin-toolkit@v1
+  with:
+    dir: plugin
+```
+
 ## Changelog
 
 [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release, including
-the `0.20.8` fixes: `release` resumes when `plugin-v<version>` already points at
+the `0.20.10` fix: `expectSnapshot()` and `panel.snapshot()` honor the
+documented `UPDATE_SNAPSHOTS=1` rerun by writing the normalised HTML and
+returning `{ status: "written" }`, while an ordinary run still fails a missing
+or changed baseline rather than writing one as a side effect. The `0.20.9` fix
+is recorded too: `explain --log` expands the Windows spelling
+`~\.dsh\logs\install.log` exactly like `~/.dsh/logs/install.log`, so the
+documented command works in PowerShell and `cmd`, and a log that cannot be read
+exits `2` naming the resolved absolute path it tried instead of a directory
+literally named `~`. The `0.20.8` fixes are recorded too: `release` resumes when
+`plugin-v<version>` already points at
 HEAD — reusing the tag and continuing to the registry wait instead of failing —
 and refuses a tag at another commit, printing the tag, the commit it points at,
 HEAD and the exact `git tag -d` / `git push --delete` recovery commands. A

@@ -69,6 +69,32 @@ test('the rendered markup matches its baseline', async () => {
   await panel.unmount();
 });
 
+test('panel.snapshot() names UPDATE_SNAPSHOTS=1, then writes and matches on the rerun', async () => {
+  const { mkdtemp, readFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(path.join(tmpdir(), 'tk-snapshot-'));
+  const previous = process.env.UPDATE_SNAPSHOTS;
+  const panel = await mountClient({ file: bundle });
+  try {
+    delete process.env.UPDATE_SNAPSHOTS;
+    assert.throws(
+      () => panel.snapshot(dir, 'panel'),
+      /no baseline at .*panel\.html; run with UPDATE_SNAPSHOTS=1 to create it/,
+    );
+
+    process.env.UPDATE_SNAPSHOTS = '1';
+    assert.equal(panel.snapshot(dir, 'panel').status, 'written');
+    assert.match(await readFile(path.join(dir, 'panel.html'), 'utf8'), /Demo panel/);
+
+    delete process.env.UPDATE_SNAPSHOTS;
+    assert.equal(panel.snapshot(dir, 'panel').status, 'same');
+  } finally {
+    if (previous === undefined) delete process.env.UPDATE_SNAPSHOTS;
+    else process.env.UPDATE_SNAPSHOTS = previous;
+    await panel.unmount();
+  }
+});
+
 test('a path that is not a bundle says what to pass instead of raising ENOENT', async () => {
   const { loadBundle } = await import('../lib/testkit/load.mjs');
   const missing = path.join(here, 'definitely-not-here', 'client.js');

@@ -29,7 +29,7 @@ const cleanFiles = {
   'package.json': JSON.stringify(manifest()),
   'index.js': 'export function apply() {}\n',
   'cordis.patch.yml': '- insert: []\n',
-  'README.md': '# clean\n\nRequires dsh >=0.2.0.\n',
+  'README.md': '# clean\n\n## Requirements\n\nRequires dsh >=0.2.0.\n',
 };
 
 /**

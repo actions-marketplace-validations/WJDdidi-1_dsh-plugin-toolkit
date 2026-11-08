@@ -1,3 +1,102 @@
+## 0.20.12
+
+- **`doctor --remote` reads the README the way a checkout does.** A published
+  repository whose README has no `## Requirements` heading, or whose
+  Requirements section omits the `engines.dsh` range it declares, used to print
+  `ok` and exit `0`, while the same checkout failed the `readme` check. The
+  remote audit now reports that failure and exits `1`; `audit --remote` shares
+  the check, so both the single-repository and `--from` batch forms print the
+  `failing` row and carry its `readme` failure in the `--json` finding. A README
+  that states the declared range still exits `0`.
+- **`dsh-plugin doctor` checks the package name before it packs anything.** A
+  `package.json` whose `name` is missing, empty, or not a valid npm package name
+  (for example `My Plugin!`) used to print `ok` and exit `0`, while
+  `verify --no-mount` failed later at `npm pack`. The manifest preflight now
+  reports a `name:` failure and exits `1`, and the same check reaches
+  `doctor --remote` and `audit --remote` through the shared manifest check.
+  `init` uses the same validator, so a scaffold's name and the check that blesses
+  it stay in step. `npm test` pins the result through the shipped CLI: missing,
+  empty and malformed names all exit `1` (`accepted=0/3`), while a valid plain or
+  scoped name exits `0`.
+- **`doctor --remote` runs the same `dsh` field check as local `doctor`.** A
+  repository whose `package.json` has `dsh: {}` and no `dsh.bundle.patch` used
+  to print `ok` and exit `0`, because the remote file checks only looked for a
+  patch that was declared. It now reports `dsh field: dsh.bundle is missing` and
+  exits `1`; the failure is also carried into `audit --remote`, and a clean
+  repository still exits `0`.
+- **`dsh-plugin fix <owner>/<repo> --remote` treats an already-correct range as
+  success.** When `package.json` already declares an `engines.dsh` range that
+  clears the check, the command still prints `ok engines.dsh is already
+  "<range>"; nothing to apply` but now exits `0` instead of `1`, matching the
+  local `fix --engines` no-op and the documented exit-code contract. No diff or
+  patch file is written.
+- **The remote repair keeps its diff and error paths.** A manifest with no
+  `engines.dsh` still prints the unified diff and exits `0`; an invalid target
+  and a network or HTTP read failure still exit `2`; and the command writes no
+  local file unless `--patch` asks for one. Regression tests pin those paths
+  beside the already-correct no-op.
+- **The remote repair exit codes are covered at the process boundary.** `npm
+  test` now spawns the real CLI for a remote manifest that is missing
+  `engines.dsh` and one that already declares a valid range, asserting exit
+  `0` for both. The README Exit codes table states the same contract.
+- **A malformed `package.json` in an ordinary dependency still stays out of
+  `audit`.** The unreadable-manifest exception only applies when the package
+  name is in `dsh.profile.bundles`; a package that is neither declared there nor
+  readable enough to expose its `dsh` field is skipped as before, so a broken
+  transitive install does not turn every audit red.
+- **A declared plugin with an unreadable `package.json` no longer disappears
+  from `audit`.** When an interrupted install leaves a truncated manifest, the
+  `dsh` field that marks the package as a plugin cannot be read. If the package
+  name is still listed in `dsh.profile.bundles`, `audit` now reports a
+  `manifest` failure naming the unreadable `package.json` and exits `1` instead
+  of skipping the folder as an ordinary dependency. Valid sibling plugins on the
+  same run are still listed.
+
+## 0.20.11
+
+- **`audit --remote --from` carries the `--host` answer through the whole
+  batch.** Each repository is compared with the host you name even when
+  `--jobs` runs several audits at once, so the printed verdict and the `--json`
+  row carry the same `host` and `compatibility` fields, in input order,
+  whatever order the responses arrive in. With `--patch-dir`, a host-targeted
+  repair is written for a valid range that excludes the host, while a
+  repository that already accepts it is skipped.
+- **The batch host mode is documented where the batch commands are.** `--help`
+  shows the `audit --remote --from <file> --host <version>` form, and the
+  README and repair guide explain that npm's pre-release rule applies — for
+  example, `>=0.2.0` does not accept `0.2.2-alpha.3` unless the range names a
+  pre-release of that same version. The semver edge cases are pinned by
+  regression tests.
+
+## 0.20.10
+
+- **`expectSnapshot()` writes the baseline when `UPDATE_SNAPSHOTS=1`.** The
+  documented rerun now writes the normalised HTML and returns
+  `{ status: "written" }` instead of failing with the same missing-baseline
+  error. Without the variable, a missing or changed baseline still fails, so a
+  snapshot is never written as a side effect of an ordinary test run.
+  `panel.snapshot()` shares the same contract and names the same flag when the
+  baseline is missing.
+
+## 0.20.9
+
+- **`dsh-plugin doctor` and `verify --no-mount` resolve a root export written as
+  a conditions object.** `exports["."]` can be a string or a conditions object
+  such as `{ "import": "./cli.mjs" }`; the loader still imports that target. It
+  used to be treated as "no root export", so a plugin whose conditions object
+  resolved to a CLI with no `apply` passed both checks. The failure now names
+  the resolved file, and a string root that exports `apply` still passes.
+- **`verify --no-mount` no longer claims it imported a host half when it
+  skipped one.** A bundle that only inserts a subpath patch needs no root
+  module, so there is nothing for the loader to import. The success line used
+  to say "installed the tarball and imported its host half" anyway; it now says
+  the host import was skipped, so the line matches the check that actually ran.
+- **`dsh-plugin explain --log` covers the Windows spelling of `~` and keeps a
+  missing log honest.** `~\.dsh\logs\install.log` expands the same way as
+  `~/.dsh/logs/install.log`, so the documented command works in PowerShell and
+  `cmd`; a log that cannot be read still exits `2` with the resolved absolute
+  path it tried, never a directory literally named `~`.
+
 ## 0.20.8
 
 - **`dsh-plugin release` resumes when the tag already points at HEAD.** A

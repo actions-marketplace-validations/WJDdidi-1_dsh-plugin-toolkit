@@ -103,6 +103,31 @@ test('verify can stop after packing when mounting is not wanted', async () => {
   assert.equal(result.text, undefined);
 });
 
+test('the success line says the host import was skipped when there is no root export', async () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-no-root-')), 'plugin');
+  init({ dir, name: 'subpath-only' });
+  const manifestPath = path.join(dir, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  // A bundle that only inserts a subpath plugin needs no root module. There is
+  // nothing for the loader to import, so verify must not claim it did.
+  delete manifest.main;
+  manifest.exports = { './client': './client.js' };
+  manifest.files = ['client.js', 'cordis.patch.yml', 'README.md'];
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.rmSync(path.join(dir, 'index.js'));
+
+  const result = await verify({ dir, mount: false });
+  assert.equal(result.ok, true, JSON.stringify(result.failures));
+  assert.equal(result.hostImported, false);
+
+  const io = recorder();
+  const code = await run(['verify', dir, '--no-mount'], io);
+  const output = io.lines.join('\n');
+  assert.equal(code, 0, output);
+  assert.match(output, /skipped the host import/);
+  assert.doesNotMatch(output, /imported its host half/);
+});
+
 test('a manifest that doctor rejects stops before npm is asked anything', async () => {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-')), 'plugin');
   init({ dir, name: 'broken' });
@@ -256,6 +281,43 @@ test('the scaffold with the patch in files still exits 0 with --no-mount', async
   const io = recorder();
   const code = await run(['verify', dir, '--no-mount'], io);
   const output = io.lines.join('\n');
+  assert.equal(code, 0, output);
+  assert.match(output, /^ok  packed \d+ file\(s\)/m);
+});
+
+const conditionalRootFixtures = [
+  ['import', 'root-export-conditions-cli'],
+  ['default', 'root-export-conditions-default-cli'],
+  ['require', 'root-export-conditions-require-cli'],
+];
+
+for (const [condition, fixture] of conditionalRootFixtures) {
+  test(`doctor and verify --no-mount both refuse the ${condition} conditions-object root that resolves to the CLI`, async () => {
+    const dir = path.join(root, 'test', 'fixtures', fixture);
+
+    const doctorIo = recorder();
+    assert.equal(await run(['doctor', dir], doctorIo), 1, doctorIo.lines.join('\n'));
+    const doctorOutput = doctorIo.lines.join('\n');
+    assert.match(doctorOutput, /root export: the root export cli\.mjs does not export apply/);
+
+    const verifyIo = recorder();
+    const code = await run(['verify', dir, '--no-mount'], verifyIo);
+    const verifyOutput = verifyIo.lines.join('\n');
+    assert.equal(code, 1, verifyOutput);
+    assert.match(verifyOutput, /stopped at doctor/);
+    assert.match(verifyOutput, /root export: the root export cli\.mjs does not export apply/);
+  });
+}
+
+test('doctor and verify --no-mount both accept a string root export that names apply', async () => {
+  const dir = path.join(root, 'test', 'fixtures', 'root-export-string-apply');
+
+  const doctorIo = recorder();
+  assert.equal(await run(['doctor', dir], doctorIo), 0, doctorIo.lines.join('\n'));
+
+  const verifyIo = recorder();
+  const code = await run(['verify', dir, '--no-mount'], verifyIo);
+  const output = verifyIo.lines.join('\n');
   assert.equal(code, 0, output);
   assert.match(output, /^ok  packed \d+ file\(s\)/m);
 });

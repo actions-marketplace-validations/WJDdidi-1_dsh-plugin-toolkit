@@ -26,12 +26,21 @@ const cleanFiles = {
   'package.json': JSON.stringify(manifest()),
   'index.js': 'export function apply() {}\n',
   'cordis.patch.yml': '- insert: []\n',
-  'README.md': '# clean\n\nRequires dsh >=0.2.0.\n',
+  'README.md': '# clean\n\n## Requirements\n\nRequires dsh >=0.2.0.\n',
 };
 
 const brokenFiles = {
   ...cleanFiles,
   'package.json': JSON.stringify(manifest({ engines: undefined })),
+};
+
+// `dsh: {}` declares no patch for the host to load. The file checks cannot see
+// that omission because no patch path is declared, so only the shared manifest
+// check (`dsh field`) can fail this repository. A batch must carry that failure
+// into both its printed verdict and its `--json` finding.
+const noBundleFiles = {
+  ...cleanFiles,
+  'package.json': JSON.stringify(manifest({ dsh: {} })),
 };
 
 const twoProblemFiles = {
@@ -109,6 +118,33 @@ test('audit --remote --from exits 1 and names the failing repository', async (t)
   const output = io.lines.join('\n');
   assert.match(output, /failing\s+demo\/broken\s+— engines\.dsh:/u);
   assert.match(output, /1 clean, 1 failing \(1 problem\), 0 unreadable/u);
+});
+
+test('audit --remote --from carries an empty dsh field into the failing row and the JSON finding', async (t) => {
+  const list = listFile('demo/no-bundle\n');
+  t.after(list.cleanup);
+  const fetchImpl = github({ 'demo/no-bundle': noBundleFiles });
+
+  const text = recorder();
+  const textCode = await run(['audit', '--remote', '--from', list.file], text, { fetchImpl });
+  assert.equal(textCode, 1);
+  const output = text.lines.join('\n');
+  assert.match(output, /failing\s+demo\/no-bundle\s+— dsh field: dsh\.bundle is missing/u);
+  assert.match(output, /summary: 1 repository — 0 clean, 1 failing \(1 problem\), 0 unreadable/u);
+
+  const json = recorder();
+  const jsonCode = await run(['audit', '--remote', '--from', list.file, '--json'], json, { fetchImpl });
+  assert.equal(jsonCode, 1);
+  const [finding] = JSON.parse(json.lines.join('\n'));
+  assert.equal(finding.target, 'demo/no-bundle');
+  assert.equal(finding.version, '1.2.3');
+  assert.equal(finding.hostRange, '>=0.2.0');
+  assert.deepEqual(finding.failures, [
+    {
+      check: 'dsh field',
+      message: 'dsh.bundle is missing; the host needs the patch file it points at',
+    },
+  ]);
 });
 
 test('the summary counts failed checks rather than failing repositories', async (t) => {

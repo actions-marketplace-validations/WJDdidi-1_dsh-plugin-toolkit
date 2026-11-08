@@ -117,7 +117,7 @@ test('--force replaces an existing patch file', async (t) => {
   assert.equal(calls.length, 1);
 });
 
-test('a repository that needs no repair leaves no patch file behind', async (t) => {
+test('a repository that needs no repair leaves no patch file behind and exits 0', async (t) => {
   const raw = `${JSON.stringify(manifest({ dsh: '>=0.3.0' }), null, 2)}\n`;
   const { fetchImpl } = github(raw);
   const io = recorder();
@@ -125,6 +125,7 @@ test('a repository that needs no repair leaves no patch file behind', async (t) 
 
   const code = await run(['fix', 'demo/plugin', '--remote', '--patch', file], io, { fetchImpl });
 
-  assert.equal(code, 1);
+  assert.equal(code, 0);
+  assert.match(text(io), /nothing to apply/u);
   assert.equal(fs.existsSync(file), false);
 });

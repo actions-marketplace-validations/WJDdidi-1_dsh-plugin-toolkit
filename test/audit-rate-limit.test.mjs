@@ -31,7 +31,7 @@ const cleanFiles = {
     exports: { '.': './index.js', './client': './client.js' },
     files: ['index.js', 'client.js', 'cordis.patch.yml', 'README.md'],
   }),
-  'README.md': '# clean\n\nRequires dsh >=0.2.0.\n',
+  'README.md': '# clean\n\n## Requirements\n\nRequires dsh >=0.2.0.\n',
 };
 
 function listFile(t, contents) {

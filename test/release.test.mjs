@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { plan, tagExists, tagName, workingTreeIsClean } from '../lib/release.mjs';
 
@@ -154,4 +155,57 @@ test('--publish runs the publish here, for repositories without a publish workfl
     sleep: async () => {},
   });
   assert.deepEqual(published, []);
+});
+
+test('release refuses a malformed engines.dsh and leaves the index untouched', async (t) => {
+  const { release } = await import('../lib/release.mjs');
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const plugin = fs.mkdtempSync(path.join(os.tmpdir(), 'rel-bad-range-'));
+  const market = fs.mkdtempSync(path.join(os.tmpdir(), 'rel-bad-range-market-'));
+  t.after(() => {
+    fs.rmSync(plugin, { recursive: true, force: true });
+    fs.rmSync(market, { recursive: true, force: true });
+  });
+
+  fs.cpSync(path.join(here, 'fixtures', 'good'), plugin, { recursive: true });
+  const manifestPath = path.join(plugin, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.engines.dsh = '>=banana';
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  fs.mkdirSync(path.join(market, 'market'));
+  const indexFile = path.join(market, 'market', 'index.json');
+  const before = `${JSON.stringify({
+    format: 1,
+    plugins: [{ name: manifest.name, versions: [] }],
+  }, null, 2)}\n`;
+  fs.writeFileSync(indexFile, before);
+
+  let gitCalls = 0;
+  let fetchCalls = 0;
+  const result = await release({
+    dir: plugin,
+    marketDir: market,
+    git: () => {
+      gitCalls += 1;
+      return '';
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error('the registry should not be reached');
+    },
+    sleep: async () => {},
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'preflight');
+  assert.ok(
+    result.failures.some(
+      ({ check, message }) => check === 'engines.dsh' && /not a semver range/u.test(message),
+    ),
+    JSON.stringify(result.failures),
+  );
+  assert.equal(gitCalls, 0, 'release must not tag a manifest it will refuse');
+  assert.equal(fetchCalls, 0, 'release must stop before the registry wait');
+  assert.equal(fs.readFileSync(indexFile, 'utf8'), before, 'the index must not be written');
 });

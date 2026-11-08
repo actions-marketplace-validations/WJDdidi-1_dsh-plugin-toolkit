@@ -32,7 +32,7 @@ function files(range) {
     'package.json': JSON.stringify(manifest(range)),
     'index.js': 'export function apply() {}\n',
     'cordis.patch.yml': '- insert: []\n',
-    'README.md': '# demo\n\nRequires dsh.\n',
+    'README.md': `# demo\n\n## Requirements\n\n${range === undefined ? 'Requires dsh.' : `Requires dsh ${range}.`}\n`,
   };
 }
 

@@ -1,0 +1,25 @@
+{
+  "name": "root-export-conditions-default-cli",
+  "version": "1.0.0",
+  "description": "the root export resolves through the default condition to a CLI",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "files": [
+    "cli.mjs",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "exports": {
+    ".": {
+      "default": "./cli.mjs"
+    }
+  }
+}

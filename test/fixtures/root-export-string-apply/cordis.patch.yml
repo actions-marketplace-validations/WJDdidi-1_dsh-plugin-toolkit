@@ -1,0 +1,4 @@
+- insert:
+    - id: 'root-export-string-apply'
+      name: 'root-export-string-apply'
+      config: {}

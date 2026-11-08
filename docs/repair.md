@@ -19,8 +19,22 @@ cloned, but it cannot edit anything. For a missing host range, `fix owner/repo
 --remote --patch repair.patch` saves the `engines.dsh` diff without a checkout;
 apply it after cloning (or paste it into a pull request). The command creates
 parent directories and refuses to replace an existing file unless `--force` is
-passed. For every other check, clone the repository and run the commands here
-against the checkout.
+passed. A manifest whose range already clears the check is a success: the
+command prints `ok engines.dsh is already ...; nothing to apply` and exits `0`
+without writing a diff or patch file. For every other check, clone the
+repository and run the commands here against the checkout.
+
+To triage a list of repositories before cloning any of them, pass `--host` to
+the remote audit. It compares each declared `engines.dsh` with the DSH version
+you run and prints `compatible`, `incompatible`, or `unknown` (no usable range)
+for every entry:
+
+```sh
+npx dsh-plugin-toolkit@latest audit --remote --from repos.txt --host 0.2.2-alpha.3
+```
+
+npm's pre-release rule still applies, so `>=0.2.0` does not accept
+`0.2.2-alpha.3` unless the range names a pre-release of that same version.
 
 ## The loop
 
@@ -49,8 +63,13 @@ the check to start with:
 npx dsh-plugin-toolkit@latest explain --log ~/.dsh/logs/install.log ./my-panel
 ```
 
+On Windows the same command accepts `~\.dsh\logs\install.log`, because `cmd`
+and PowerShell leave the tilde alone. A missing log exits `2` and names the
+resolved absolute path it tried to read, never a literal `~` directory.
+
 | Check | What it protects |
 | --- | --- |
+| [`name`](#name) | npm publishes and installs by this field; a malformed one fails at publish or `npm pack` |
 | [`version`](#version) | The tag and the registry version both come from this field |
 | [`engines.dsh`](#enginesdsh) | The market index cannot state which host the plugin supports |
 | [`patch file`](#patch-file) | The host has no patch to apply |
@@ -58,6 +77,41 @@ npx dsh-plugin-toolkit@latest explain --log ~/.dsh/logs/install.log ./my-panel
 | [`client entry`](#client-entry) | The declared bundle file is not in the checkout or the tarball |
 | [`root export`](#root-export) | The loader imports the package and finds no `apply` |
 | [`files list`](#files-list) | The published tarball is missing code `package.json` points at |
+
+## name
+
+**What it means.** npm publishes and installs by `package.json`'s `name`, and the
+loader imports that bare name. A missing, empty or malformed name can pass every
+file check and then fail at publish or `npm pack`, so `doctor` checks it before
+anything is packed.
+
+**What you see.**
+
+```text
+  ✗ name: package.json has no "name", so npm cannot publish or install the package
+  ✗ name: package.json has an empty "name", so npm cannot publish or install the package
+  ✗ name: package.json "name" "My Plugin!" is not a valid npm package name; use lower-case letters, digits, dots, hyphens or underscores, for example my-plugin or @me/my-plugin
+```
+
+`doctor --remote` and `audit --remote` run this same manifest check against the
+`package.json` GitHub serves, so the repository does not need a clone.
+
+`npm test` pins the behavior at the process boundary: the shipped CLI must reject
+a missing, empty and malformed name (`accepted=0/3`), and a valid plain or scoped
+name is the control that exits `0`.
+
+**Smallest fix.** Use a valid npm package name: lower-case letters, digits,
+dots, hyphens or underscores, optionally scoped with `@scope/`.
+
+```json
+{
+  "name": "my-plugin"
+}
+```
+
+Uppercase letters, spaces and characters such as `!` are refused. If this is an
+existing package, keep the name it was published under; changing it creates a
+different package.
 
 ## version
 
@@ -290,10 +344,11 @@ build; run it before `doctor`, or point both fields at a committed file. If only
 
 **What it means.** The loader starts a plugin by importing the bare package name
 and calling its `apply`. That module comes from `exports["."]` when it is a
-string, otherwise from `main`. If it is the CLI instead of the plugin half, the
-CLI runs or exports nothing and the row mounts nothing. If the module exists but
-does not export `apply`, the loader imports the package and still mounts
-nothing.
+string or a conditions object that resolves to one (for example
+`{ "import": "./index.js" }` or `{ "default": "./index.js" }`), otherwise from
+`main`. If it is the CLI instead of the plugin half, the CLI runs or exports
+nothing and the row mounts nothing. If the module exists but does not export
+`apply`, the loader imports the package and still mounts nothing.
 
 **What you see.**
 
@@ -404,6 +459,10 @@ prints has an answer.
 **What it means.** The market index expects a `## Requirements` section that
 states the same host range the manifest declares. It is how a reader learns
 which host the plugin needs before installing it.
+
+`doctor --remote` and `audit --remote` run this same README check against the
+text GitHub serves, so a published repository with no Requirements heading
+fails without a clone.
 
 **What you see.**
 

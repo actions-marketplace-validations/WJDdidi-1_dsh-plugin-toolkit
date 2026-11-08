@@ -5,6 +5,9 @@
  * memory, so the network is never involved.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import { run } from '../lib/cli.mjs';
@@ -70,16 +73,60 @@ test('a missing range prints a unified diff and exits 0 without writing anything
   assert.match(calls[0].url, /\/contents\/package\.json$/u);
 });
 
-test('an existing valid range prints no diff, says nothing to apply, and exits 1', async () => {
+test('a missing range is still a printed plan, not a local file', async (t) => {
+  const raw = `${JSON.stringify(manifest({ node: '>=18' }), null, 2)}\n`;
+  const { fetchImpl, calls } = github(raw);
+  const io = recorder();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-fix-remote-'));
+  const previous = process.cwd();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  process.chdir(dir);
+  try {
+    const code = await run(['fix', 'demo/plugin', '--remote'], io, { fetchImpl });
+
+    assert.equal(code, 0);
+    const output = text(io);
+    assert.match(output, /^--- a\/package\.json$/mu);
+    assert.match(output, /^\+\+\+ b\/package\.json$/mu);
+    assert.match(output, /^@@ -\d+,\d+ \+\d+,\d+ @@$/mu);
+    assert.match(output, /^\+ {4}"dsh": ">=0\.2\.0"$/mu);
+    assert.match(output, /nothing written/u);
+    assert.deepEqual(fs.readdirSync(dir), [], 'the remote repair wrote a local file');
+    assert.deepEqual(
+      calls.map((call) => call.method),
+      ['GET'],
+    );
+  } finally {
+    process.chdir(previous);
+  }
+});
+
+test('the default range already in package.json prints no diff and exits 0', async () => {
+  const raw = `${JSON.stringify(manifest({ dsh: '>=0.2.0' }), null, 2)}\n`;
+  const { fetchImpl, calls } = github(raw);
+  const io = recorder();
+
+  const code = await run(['fix', 'demo/plugin', '--remote'], io, { fetchImpl });
+
+  assert.equal(code, 0);
+  const output = text(io);
+  assert.match(output, /ok {2}engines\.dsh is already ">=0\.2\.0"; nothing to apply/u);
+  assert.doesNotMatch(output, /^--- a\//mu);
+  assert.doesNotMatch(output, /^\+\+\+ b\//mu);
+  assert.doesNotMatch(output, /^@@/mu);
+  assert.equal(calls.length, 1);
+});
+
+test('any existing valid range is a no-op success, like the local fixer', async () => {
   const raw = `${JSON.stringify(manifest({ dsh: '>=0.3.0' }), null, 2)}\n`;
   const { fetchImpl, calls } = github(raw);
   const io = recorder();
 
   const code = await run(['fix', 'demo/plugin', '--remote'], io, { fetchImpl });
 
-  assert.equal(code, 1);
+  assert.equal(code, 0);
   const output = text(io);
-  assert.match(output, /nothing to apply/u);
+  assert.match(output, /ok {2}engines\.dsh is already ">=0\.3\.0"; nothing to apply/u);
   assert.doesNotMatch(output, /^--- a\//mu);
   assert.doesNotMatch(output, /^\+\+\+ b\//mu);
   assert.doesNotMatch(output, /^@@/mu);
@@ -99,6 +146,34 @@ test('an unreachable repository exits 2 with the network error and no diff', asy
   assert.match(output, /cannot reach GitHub for package\.json/u);
   assert.match(output, /ECONNREFUSED/u);
   assert.doesNotMatch(output, /^--- a\//mu);
+});
+
+test('an invalid target exits 2 before any GitHub request', async () => {
+  const io = recorder();
+  const calls = [];
+  const fetchImpl = async (...args) => {
+    calls.push(args);
+    return { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) };
+  };
+
+  const code = await run(['fix', 'not-a-repo', '--remote'], io, { fetchImpl });
+
+  assert.equal(code, 2);
+  assert.match(text(io), /is a name, not owner\/repo/u);
+  assert.deepEqual(calls, [], 'an invalid target was sent to GitHub');
+});
+
+test('an HTTP read failure exits 2 with the status and no diff', async () => {
+  const io = recorder();
+  const fetchImpl = async () => ({ ok: false, status: 500, json: async () => ({ message: 'server error' }) });
+
+  const code = await run(['fix', 'demo/plugin', '--remote'], io, { fetchImpl });
+
+  assert.equal(code, 2);
+  const output = text(io);
+  assert.match(output, /GitHub answered 500 for package\.json/u);
+  assert.doesNotMatch(output, /^--- a\//mu);
+  assert.doesNotMatch(output, /^@@/mu);
 });
 
 test('a pinned range is replaced in the printed diff', async () => {

@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { addVersion, auditVersions, buildEntry, findPlugin } from '../lib/index-file.mjs';
 import { run } from '../lib/cli.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CLI = path.join(ROOT, 'bin', 'dsh-plugin.mjs');
 
 const index = () => ({
   formatVersion: 1,
@@ -93,4 +98,115 @@ test('the index command exits 1 for a market entry whose engines.dsh is not a ra
   const io = { log: (line) => lines.push(String(line)), error: (line) => lines.push(String(line)) };
   assert.equal(await run(['index', dir], io), 1);
   assert.match(lines.join('\n'), /not a semver range/u);
+});
+
+test('the index command accepts a file path and names the version and value it rejects', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-index-file-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const indexFile = path.join(dir, 'index.json');
+  const writeIndexFile = (range) => {
+    fs.writeFileSync(
+      indexFile,
+      JSON.stringify({
+        formatVersion: 1,
+        plugins: [
+          {
+            name: 'demo-plugin',
+            versions: [
+              { version: '1.2.0', publishTimestamp: 1, source: { type: 'npm' }, engines: { dsh: range } },
+            ],
+          },
+        ],
+      }),
+    );
+  };
+  const runIndex = async () => {
+    const lines = [];
+    const io = { log: (line) => lines.push(String(line)), error: (line) => lines.push(String(line)) };
+    return { code: await run(['index', indexFile], io), output: lines.join('\n') };
+  };
+
+  // The acceptance case: the file itself is the argument, not its directory.
+  writeIndexFile('>=banana');
+  let result = await runIndex();
+  assert.equal(result.code, 1);
+  assert.match(result.output, /demo-plugin/u);
+  assert.match(result.output, /1\.2\.0/u);
+  assert.match(result.output, /engines\.dsh ">=banana" is not a semver range/u);
+
+  // A pin is a complete version, not a span the index can repeat.
+  writeIndexFile('0.2.0');
+  result = await runIndex();
+  assert.equal(result.code, 1);
+  assert.match(result.output, /1\.2\.0/u);
+  assert.match(result.output, /engines\.dsh "0\.2\.0" is not a semver range/u);
+
+  // The same entry with a real range is clean and exits 0.
+  writeIndexFile('>=0.2.0');
+  result = await runIndex();
+  assert.equal(result.code, 0);
+  assert.match(result.output, /ok\s+demo-plugin: 1 version\(s\) all carry engines\.dsh/u);
+});
+
+test('creating a market entry with a pinned range is refused, like the audit', () => {
+  assert.throws(
+    () => buildEntry({ version: '1.2.3', publishTimestamp: 1793400000, hostRange: '0.2.0' }),
+    /not a semver range/u,
+  );
+  assert.throws(
+    () =>
+      addVersion(index(), 'demo-plugin', {
+        version: '1.2.3',
+        publishTimestamp: 1793400000,
+        engines: { dsh: '0.2.0' },
+      }),
+    /not a semver range/u,
+  );
+});
+
+test('the shipped CLI process answers the index question, not just the run() helper', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-index-cli-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const indexFile = path.join(dir, 'market', 'index.json');
+  fs.mkdirSync(path.dirname(indexFile), { recursive: true });
+  const writeIndexFile = (range) => {
+    fs.writeFileSync(
+      indexFile,
+      JSON.stringify({
+        formatVersion: 1,
+        plugins: [
+          {
+            name: 'demo-plugin',
+            versions: [
+              { version: '1.2.0', publishTimestamp: 1, source: { type: 'npm' }, engines: { dsh: range } },
+            ],
+          },
+        ],
+      }),
+    );
+  };
+  const runIndex = () => spawnSync(process.execPath, [CLI, 'index', indexFile], { encoding: 'utf8' });
+
+  // The malformed value has to fail the process, not just produce a finding.
+  writeIndexFile('>=banana');
+  let result = runIndex();
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /engines\.dsh ">=banana" is not a semver range/u);
+  assert.doesNotMatch(result.stdout, /^ok\b/mu);
+
+  // A pinned version is not a range the index can repeat either.
+  writeIndexFile('0.2.0');
+  result = runIndex();
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /engines\.dsh "0\.2\.0" is not a semver range/u);
+  assert.doesNotMatch(result.stdout, /^ok\b/mu);
+
+  // The same entry with a real range prints ok and exits 0.
+  writeIndexFile('>=0.2.0');
+  result = runIndex();
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^ok\s+demo-plugin: 1 version\(s\) all carry engines\.dsh$/mu);
 });

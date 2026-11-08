@@ -5,12 +5,40 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { checkHostRange, doctor, hostRange } from '../lib/doctor.mjs';
+import { checkHostRange, doctor, hostRange, rootEntry } from '../lib/doctor.mjs';
 import { init } from '../lib/init.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => path.join(here, 'fixtures', name);
 const scratch = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-doctor-'));
+
+test('a missing, empty or non-npm name is a name failure, not an ok verdict', () => {
+  for (const name of [undefined, '', 'My Plugin!']) {
+    const dir = path.join(scratch(), 'plugin');
+    fs.cpSync(fixture('good'), dir, { recursive: true });
+    const manifestPath = path.join(dir, 'package.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (name === undefined) delete manifest.name;
+    else manifest.name = name;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const report = doctor(dir);
+    const failure = report.failures.find((entry) => entry.check === 'name');
+    assert.ok(failure, `${JSON.stringify(name)}: ${JSON.stringify(report.failures)}`);
+    assert.match(failure.message, /name/u);
+  }
+});
+
+test('a valid scoped npm name passes the name check', () => {
+  const dir = path.join(scratch(), 'plugin');
+  fs.cpSync(fixture('good'), dir, { recursive: true });
+  const manifestPath = path.join(dir, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.name = '@me/my-panel';
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  assert.equal(doctor(dir).failures.some((entry) => entry.check === 'name'), false);
+});
 
 test('a manifest the host can load passes every check', () => {
   const report = doctor(fixture('good'));
@@ -86,6 +114,37 @@ test('a plugin without a bin has no root export problem', async () => {
   const dir = path.join(scratch(), 'plugin');
   init({ dir, name: 'plain-plugin' });
   assert.equal(doctor(dir).failures.some((entry) => entry.check === 'root export'), false);
+});
+
+test('the root export is resolved from a conditions object, not treated as absent', () => {
+  assert.equal(rootEntry({ exports: { '.': { import: './cli.mjs' } } }), 'cli.mjs');
+  assert.equal(rootEntry({ exports: { '.': { default: './index.js' } } }), 'index.js');
+  assert.equal(rootEntry({ exports: { '.': { require: './index.cjs' } } }), 'index.cjs');
+  assert.equal(rootEntry({ exports: { '.': { node: { import: './node.mjs' } } } }), 'node.mjs');
+  assert.equal(rootEntry({ exports: './shorthand.js' }), 'shorthand.js');
+  // The fallback still applies when there is no root export at all.
+  assert.equal(rootEntry({ main: 'main.js' }), 'main.js');
+  assert.equal(rootEntry({ exports: { './client': './client.js' } }), null);
+});
+
+test('a conditions-object root export is refused for import, default and require and names the target', () => {
+  const fixtures = [
+    ['import', 'root-export-conditions-cli'],
+    ['default', 'root-export-conditions-default-cli'],
+    ['require', 'root-export-conditions-require-cli'],
+  ];
+  for (const [condition, name] of fixtures) {
+    const report = doctor(fixture(name));
+    const failure = report.failures.find((entry) => entry.check === 'root export');
+    assert.ok(failure, `${condition}: ${JSON.stringify(report.failures)}`);
+    assert.match(failure.message, /cli\.mjs/, condition);
+    assert.match(failure.message, /does not export apply/, condition);
+  }
+});
+
+test('a string root export that names a module exporting apply passes', () => {
+  const report = doctor(fixture('root-export-string-apply'));
+  assert.deepEqual(report.failures, []);
 });
 
 test('doctor rejects a pinned or malformed engines.dsh, and accepts spans', () => {
