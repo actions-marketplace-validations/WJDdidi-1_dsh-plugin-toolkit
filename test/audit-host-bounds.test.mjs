@@ -40,3 +40,20 @@ test('~> is the same range as ~', () => {
 test('doctor accepts ~> as a valid engines.dsh range', () => {
   assert.equal(checkHostRange({ engines: { dsh: '~>1.2.3' } }), null);
 });
+
+test('a strict comparison against a wildcard major matches nothing, as npm does', () => {
+  for (const range of ['>*', '<*', '>x', '<x', '>X', '<X']) {
+    assert.equal(hostCompatibility(range, '0.0.0-alpha'), 'incompatible', range);
+    assert.equal(hostCompatibility(range, '0.0.0'), 'incompatible', range);
+    assert.equal(hostCompatibility(range, '1.2.3'), 'incompatible', range);
+    assert.equal(hostCompatibility(range, '10.0.0'), 'incompatible', range);
+  }
+});
+
+test('an inclusive wildcard comparison still spans every stable version, as npm does', () => {
+  for (const range of ['*', '=*', '>=*', '<=*']) {
+    assert.equal(hostCompatibility(range, '0.0.0'), 'compatible', range);
+    assert.equal(hostCompatibility(range, '1.2.3'), 'compatible', range);
+    assert.equal(hostCompatibility(range, '10.0.0'), 'compatible', range);
+  }
+});

@@ -1,5 +1,31 @@
+## 0.20.15
+
+- **A strict comparison against a wildcard major matches nothing.** `audit
+  --remote <owner/repo> --host <version>` treated `>*`, `>x`, `<*` and `<x` as
+  "any version" and called every host compatible, while npm reads them as an
+  empty set that no release satisfies. The host-range parser now reports
+  `incompatible` for those spellings; the inclusive `>=*` and `<=*` forms still
+  span every stable host. Regression tests pin the parser, the printed CLI
+  verdict and the `--json` row, including the major-only `>1`/`<=1` boundary:
+  `>1` rejects 1.2.3 and `<=1` accepts it, in both the text line and
+  `compatibility`.
+
 ## 0.20.14
 
+- **The `--jobs` benchmark asserts work, not wall-clock speed.** The throughput
+  test used to fail whenever the batched run was not at least 25% faster, which
+  is noise when the whole measurement is tens of milliseconds on a loaded
+  runner. It now checks what batching actually guarantees: the same named
+  results and the same number of API requests at `--jobs 1` and the default
+  width, no overlap at `--jobs 1`, and real overlap (never above the requested
+  width) after batching. The benchmark still prints before/after wall clock and
+  the speedup as context, but no assertion depends on them, so a slow machine
+  can no longer block the publish gate.
+- **`npm run benchmark -- --latency` reaches the measured run.** The script
+  parsed the flag into `latency` while `runBenchmark` reads `latencyMs`, so the
+  option was accepted and ignored and every run used the default 500 ms. Both
+  names now agree, and a regression test runs the shipped script with
+  `--limit 1 --latency 1` and checks the printed delay.
 - **`doctor` reads the root export from code, not from prose.** A root module
   whose only `apply` was inside a comment, string, template or regex literal
   used to pass the `root export` check, while `verify --no-mount` rejected the

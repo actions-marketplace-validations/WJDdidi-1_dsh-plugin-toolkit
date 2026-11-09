@@ -29,7 +29,7 @@ function positive(name, value) {
 const options = {
   list: BENCHMARK_LIST,
   limit: BENCHMARK_LIMIT,
-  latency: BENCHMARK_LATENCY_MS,
+  latencyMs: BENCHMARK_LATENCY_MS,
   jobs: DEFAULT_JOBS,
 };
 
@@ -50,7 +50,7 @@ for (let index = 0; index < argv.length; index += 1) {
   index += 1;
   if (flag === '--list') options.list = value;
   else if (flag === '--limit') options.limit = positive(flag, value);
-  else if (flag === '--latency') options.latency = positive(flag, value);
+  else if (flag === '--latency') options.latencyMs = positive(flag, value);
   else if (flag === '--jobs') options.jobs = positive(flag, value);
   else throw new Error(`unknown flag ${flag}; run with --help`);
 }

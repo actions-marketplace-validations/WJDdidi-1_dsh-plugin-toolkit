@@ -18,6 +18,7 @@ import {
   readBenchmarkTargets,
   runBenchmark,
 } from '../lib/benchmark.mjs';
+import { run } from '../lib/exec.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -72,7 +73,7 @@ test('the README throughput claim stays in step with DEFAULT_JOBS', () => {
   );
 });
 
-test('the benchmark measures the same named list before and after --jobs', async () => {
+test('the benchmark measures the same work before and after --jobs', async () => {
   const targets = readBenchmarkTargets({ limit: 4 });
   assert.equal(targets.length, 4);
   assert.equal(targets[0], '610la/dsh-notification-center');
@@ -83,13 +84,53 @@ test('the benchmark measures the same named list before and after --jobs', async
   assert.deepEqual(result.targets, targets);
   assert.equal(result.before.result.summary.clean, 4);
   assert.equal(result.after.result.summary.clean, 4);
+
+  // The invariant is the work, not the clock: batching must request the same
+  // repositories and produce the same named rows, while actually overlapping
+  // requests instead of walking the list one at a time. A loaded machine makes
+  // the wall clock noisy but cannot change these counters.
+  assert.deepEqual(
+    result.after.result.reports,
+    result.before.result.reports,
+    '--jobs changed a named result or the order findings are reported in',
+  );
+  assert.equal(
+    result.after.requests,
+    result.before.requests,
+    `--jobs changed the number of API requests: before ${result.before.requests}, after ${result.after.requests}`,
+  );
+  assert.equal(result.before.maxInFlight, 1, '--jobs 1 should never overlap API requests');
   assert.ok(
-    result.after.elapsedMs < result.before.elapsedMs * 0.75,
-    `batching did not shorten the run: before ${result.before.elapsedMs.toFixed(1)} ms, after ${result.after.elapsedMs.toFixed(1)} ms`,
+    result.after.maxInFlight > 1,
+    `batching never overlapped a request: max in flight was ${result.after.maxInFlight}`,
+  );
+  assert.ok(
+    result.after.maxInFlight <= result.after.jobs,
+    `batching used ${result.after.maxInFlight} requests in flight with --jobs ${result.after.jobs}`,
   );
 
   const output = formatBenchmark(result);
   assert.match(output, /before\s+--jobs 1/u);
   assert.match(output, new RegExp(`after\\s+--jobs ${DEFAULT_JOBS}`, 'u'));
   assert.match(output, /s\/repository/u);
+  // Timing stays visible as context, but nothing above asserted it.
+  assert.match(output, /speedup\s+[\d.]+x \(wall clock, context only\)/u);
+  assert.match(
+    output,
+    new RegExp(`requests ${result.before.requests} before, ${result.after.requests} after`, 'u'),
+  );
+});
+
+test('the benchmark script honors --latency instead of silently using the default', () => {
+  const output = run(process.execPath, ['scripts/benchmark-audit.mjs', '--limit', '1', '--latency', '1'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).split('\\').join('/');
+  assert.match(
+    output,
+    /benchmark: 1 repositories from .*ecosystem-audit-2026-11-03\.txt, 1 ms per API request/u,
+    '--latency was parsed but not passed to the measured run',
+  );
+  assert.match(output, /max in flight 1 before, 1 after/u);
 });
