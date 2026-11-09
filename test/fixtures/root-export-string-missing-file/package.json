@@ -1,0 +1,21 @@
+{
+  "name": "root-export-string-missing-file",
+  "version": "1.0.0",
+  "description": "the root export is a string naming a file that does not exist",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "files": [
+    "missing.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "exports": "./missing.js"
+}

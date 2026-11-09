@@ -78,7 +78,7 @@ resolved absolute path it tried to read, never a literal `~` directory.
 | [`patch file`](#patch-file) | The host has no patch to apply |
 | [`client declaration`](#client-declaration) | The host has no bundle to serve, so the panel cannot appear |
 | [`client entry`](#client-entry) | The declared bundle file is not in the checkout or the tarball |
-| [`root export`](#root-export) | The loader imports the package and finds no `apply` |
+| [`root export`](#root-export) | The loader imports a missing file or directory, the CLI, or a module with no `apply` |
 | [`files list`](#files-list) | The published tarball is missing code `package.json` points at |
 
 ## name
@@ -350,19 +350,25 @@ and calling its `apply`. That module comes from `exports["."]` when it is a
 string or a conditions object that resolves to one (for example
 `{ "import": "./index.js" }` or `{ "default": "./index.js" }`), otherwise from
 `main`. If it is the CLI instead of the plugin half, the CLI runs or exports
-nothing and the row mounts nothing. If the module exists but does not export
-`apply`, the loader imports the package and still mounts nothing.
+nothing and the row mounts nothing. If the path is missing, is a directory, or
+is unreadable, the import fails before `apply` can run. If the module exists but
+does not export `apply`, the loader imports the package and still mounts
+nothing.
 
 **What you see.**
 
 ```text
   ✗ root export: exports["."] points at the CLI (bin/demo.js), so the loader's row has no plugin to apply; point it at the module that exports apply
+  ✗ root export: the root export missing.js does not exist, so the loader cannot import the package
+  ✗ root export: the root export lib is a directory, not a module, so the loader cannot import it
   ✗ root export: the root export lib/index.js does not export apply, so the loader imports the package and mounts nothing
 ```
 
 The first line is printed even when `doctor` followed `main` rather than
 `exports["."]`; the fix is the same. The path in the message is the target after
-a leading `./` is removed.
+a leading `./` is removed. A missing file, a directory and an unreadable file
+are named here instead of passing as `ok` or escaping as a raw `EISDIR`; the
+loader would fail on all three.
 
 **Smallest fix.** Give the package a plugin entry that exports `apply`, and point
 the root at it while leaving `bin` on the CLI:
@@ -402,8 +408,11 @@ root module does not need a root export; do not point the root at the CLI to
 satisfy the field.
 
 If the root file named by `main`/`exports["."]` does not exist at all, `doctor`
-has no source to inspect and does not report this check — `verify` imports the
-installed package and will catch it.
+reports it as a `root export` failure naming that path instead of silently
+passing; a directory gets the same failure instead of a raw `EISDIR`.
+`verify --no-mount` runs `doctor` before it packs, so on these fixtures it exits
+at `stopped at doctor` with the same `root export` line and never reaches a
+`pack:` failure. The unmodified `init` scaffold still passes both commands.
 
 ## files list
 

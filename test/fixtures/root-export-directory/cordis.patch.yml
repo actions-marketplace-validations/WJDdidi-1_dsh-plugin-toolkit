@@ -1,0 +1,4 @@
+- insert:
+    - id: 'root-export-directory'
+      name: 'root-export-directory'
+      config: {}
