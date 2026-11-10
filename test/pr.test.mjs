@@ -130,6 +130,13 @@ test('a release with --pr stops at the pull request, and with --merge goes to me
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', 'commit', '-qm', 'init'], { cwd: dir });
 
   const document = { versions: { '2.0.0': {} }, time: { '2.0.0': '2026-10-31T02:00:00.000Z' } };
+  // Each scenario starts before the release wrote the entry: a repeated release
+  // with an unchanged index deliberately stops before the PR sequence.
+  const resetIndex = () => {
+    fs.writeFileSync(path.join(dir, 'market/index.json'), JSON.stringify({
+      format: 1, plugins: [{ name: 'demo-plugin', versions: [] }],
+    }, null, 2));
+  };
   const gitCalls = [];
   const git = (args) => {
     gitCalls.push(args.join(' '));
@@ -153,6 +160,7 @@ test('a release with --pr stops at the pull request, and with --merge goes to me
   assert.equal(withoutPr.pullRequest, undefined);
   assert.equal(ghCalls.length, 0);
 
+  resetIndex();
   const prOnly = await release({
     dir, indexFile: 'market/index.json', pr: true, git, gh,
     fetch: async () => ({ status: 200, ok: true, json: async () => document }),
@@ -162,6 +170,7 @@ test('a release with --pr stops at the pull request, and with --merge goes to me
   assert.equal(prOnly.pullRequest.url, 'https://example.test/pr/9');
   assert.equal(prOnly.merged, undefined);
 
+  resetIndex();
   const merged = await release({
     dir, indexFile: 'market/index.json', pr: true, merge: true, git, gh,
     fetch: async () => ({ status: 200, ok: true, json: async () => document }),

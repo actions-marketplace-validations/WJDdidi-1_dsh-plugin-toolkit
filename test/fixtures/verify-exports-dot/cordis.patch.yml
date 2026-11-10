@@ -1,0 +1,4 @@
+- insert:
+    - id: 'verify-exports-dot'
+      name: 'verify-exports-dot'
+      config: {}

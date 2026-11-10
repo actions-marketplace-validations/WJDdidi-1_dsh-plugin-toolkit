@@ -1,0 +1,13 @@
+{
+  "name": "broken",
+  "version": "1.0.0",
+  "description": "a declared plugin whose patch file was never shipped",
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./missing.yml"
+    }
+  }
+}

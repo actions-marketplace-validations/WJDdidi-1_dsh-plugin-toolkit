@@ -403,9 +403,17 @@ satisfy the check. `doctor` reads the source, not the installed module, so it
 never imports or runs the plugin while asking this question.
 `verify --no-mount` installs and imports the same module, so both commands exit
 `1` on a comment-only root; `npm test` spawns the shipped CLI on that fixture
-and pins the agreement. A plugin that only inserts a subpath patch and has no
-root module does not need a root export; do not point the root at the CLI to
-satisfy the field.
+and pins the agreement. A package that declares neither `exports` nor `main` has
+no root module at all, so there is nothing to import; do not point the root at
+the CLI to satisfy the field.
+
+`verify` resolves the installed root through the package specifier rather than
+reopening the file `main` names. When `exports` exists but has no `.` entry,
+Node ignores `main` and `import("<name>")` fails with
+`ERR_PACKAGE_PATH_NOT_EXPORTED`. `verify --no-mount` then exits `1` at
+`stopped at install` with a `root export` failure naming the missing `.`
+export. Restoring `exports["."]` makes the same fixture exit `0` and print
+`imported its host half`.
 
 If the root file named by `main`/`exports["."]` does not exist at all, `doctor`
 reports it as a `root export` failure naming that path instead of silently

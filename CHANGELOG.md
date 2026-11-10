@@ -1,3 +1,71 @@
+## 0.20.20
+
+- **A repeated `release --pr` is a no-op when the committed index already
+  carries the version.** The resume path noticed that the same version with the
+  same publish time needed no index write, but it still entered the PR
+  sequence; `git commit` then failed because there was nothing staged, and the
+  run stopped with a `market/<version>` branch left behind. An unchanged index
+  that is already committed now ends the release after the registry wait: it
+  prints `<index> already carried <version>; nothing to commit`, exits `0`,
+  leaves `git log -1` alone, and creates no branch even with `--pr` or
+  `--merge`. An entry that an earlier run without `--pr` wrote but did not
+  commit still goes through the branch and PR so the release is finished. A
+  different publish time still stops with both timestamps named. Three
+  consecutive CLI runs now assert exit `0` and an unchanged `git log -1`, and a
+  checked-in one-second-mismatch fixture pins the failure through the CLI as
+  well: exit `1`, both timestamps in the error, and no `market/<version>`
+  branch.
+
+## 0.20.19
+
+- **`audit --home` expands `~` and `~\` before the scan, and a bare flag is
+  refused.** The local audit resolves its home like every other user-named
+  path, so `audit --home '~/.dsh'` and `audit --home '~\.dsh'` read
+  `$HOME/.dsh` on cmd and PowerShell instead of a folder literally named `~`.
+  A checked-in home with one declared plugin whose `dsh.bundle.patch` names
+  `./missing.yml` now pins both spellings through the shipped CLI: each prints
+  the `broken` row, names the missing patch, exits `1`, and leaves no `~`
+  directory in the working folder; the absolute-path control exits `1` with the
+  same row. `--home` with no value exits `2` and says what it needs, rather
+  than scanning the current folder and reporting "no plugins installed" with
+  exit `0`. `--help` documents the flag.
+
+## 0.20.18
+
+- **`verify` resolves the installed root the way the loader does.** It used to
+  import the file `main` named, so a tarball whose `exports` map had no `.`
+  entry passed `verify --no-mount` even though `import("<name>")` failed with
+  `ERR_PACKAGE_PATH_NOT_EXPORTED`. The installed copy is now imported by its
+  bare package name from a probe module beside it, so Node's own `exports`
+  resolution decides. The missing `.` entry is reported as a `root export`
+  failure and the command exits `1`; the same fixture with `exports["."]` exits
+  `0` and prints `imported its host half`. A package that declares neither
+  `exports` nor `main` still has no root module to import, so its success line
+  keeps saying the host import was skipped. Two checked-in fixtures
+  (`test/fixtures/verify-exports-no-dot` and `verify-exports-dot`) now pin both
+  sides through the shipped CLI process, including the exit code, so `npm test`
+  fails if the no-`.` tarball ever exits `0` again. The README states that the
+  bare specifier, not a file path, is what `verify` imports.
+
+## 0.20.17
+
+- **`audit` reports a declared bundle whose folder is gone.** When a package
+  name stayed in `dsh.profile.bundles` but its `node_modules/<name>` folder had
+  been removed, the install scan never saw the package and `audit --home`
+  printed only its healthy siblings, so the command exited `0` and hid the
+  reason the loader could not mount it. The scan now starts from the profile's
+  declared bundles and prints a `missing` row with an `install` failure naming
+  the absent `node_modules/<name>` path; the valid siblings are still listed
+  and the command exits `1`. A package that is absent but undeclared is still
+  ignored, so ordinary dependencies do not appear. A regression test pins the
+  module result and the spawned CLI exit code in both directions: the declared
+  missing bundle exits `1`, and the same home with the name removed from the
+  profile exits `0` without printing it. A checked-in home at
+  `test/fixtures/missing-declared-bundle` also keeps the minimal case — one
+  declared name and no `node_modules` directory at all — reproducible through
+  `audit --home`, so the scan cannot fall back to "nothing installed" and exit
+  clean again.
+
 ## 0.20.16
 
 - **`doctor` names a root export that cannot be loaded.** A package whose

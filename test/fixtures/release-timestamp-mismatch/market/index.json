@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "plugins": [
+    {
+      "name": "demo-plugin",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "publishTimestamp": 1767225601,
+          "engines": {
+            "dsh": ">=0.2.0"
+          },
+          "source": {
+            "type": "npm"
+          }
+        }
+      ]
+    }
+  ]
+}

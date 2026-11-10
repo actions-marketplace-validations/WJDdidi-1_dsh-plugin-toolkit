@@ -80,7 +80,7 @@ npx dsh-plugin-toolkit@latest release . --pr --merge
 
 ![Five steps, and the failure each one catches](https://raw.githubusercontent.com/WJDdidi-1/dsh-plugin-toolkit/main/docs/pipeline.svg)
 
-The order matters. Packing first means the check reads the file list npm will publish, not the folder you have. Installing the tarball means the root export is imported the way the loader imports it. Mounting means the client bundle is actually executed, in jsdom, with a host that records what it registered.
+The order matters. Packing first means the check reads the file list npm will publish, not the folder you have. Installing the tarball means the root is imported by its bare specifier — the package name the loader uses — not by a file path taken from `main` or `exports["."]`. Node ignores `main` once `exports` exists, so a package whose `exports` map has no `"."` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` at that step even though the file is present. Mounting means the client bundle is actually executed, in jsdom, with a host that records what it registered.
 
 Each step exists because a plugin once got past the step before it and still installed into nothing.
 
@@ -323,6 +323,15 @@ sibling plugin is still listed on the same run. The exception stays narrow: a
 damaged `package.json` in a package that is neither in `dsh.profile.bundles` nor
 readable enough to expose a `dsh` field is still an ordinary dependency and is
 skipped, so one broken transitive install does not fail every audit.
+
+A declared bundle can also be missing entirely. If a name stays in
+`dsh.profile.bundles` after its `node_modules/<name>` folder is removed (an
+interrupted install, or a package deleted by hand), `audit` prints a `missing`
+row with an `install` failure naming the absent folder and exits `1`, while
+still listing the healthy plugins on the same run. An absent package that the
+profile never declared is not an install record, so it is not invented in the
+report; a regression test removes the name from the profile and requires the
+shipped CLI to exit `0` without printing it.
 
 ## Edit a plugin that is already installed
 
@@ -683,9 +692,11 @@ the diff in the terminal.
 | `patch file` | The path declared above must be a real file |
 | `client entry` | If `dsh.client` is declared, the bundle has to be there |
 | `files list` | Every path `package.json` points at (`exports`, patch, client) must be covered by `files` |
-| `root export` | The loader imports the bare package name; if that module is missing, is a directory, is the CLI, or exports no `apply`, the row mounts nothing while the install reports success |
+| `root export` | The loader imports the bare package name; if that module is missing, is a directory, is the CLI, exports no `apply`, or the `exports` map has no `.` entry, the row mounts nothing while the install reports success |
 
-The `root export` check is a source check, not an install. `doctor` resolves the module the loader imports — `exports["."]` when it is a string or a conditions object (`default`, `import`, `require`, `node`, `module-sync`), otherwise `main` — then checks that the path is a readable regular file, removes comments and the contents of string, template and regex literals, and looks for a real export. A missing file, a directory and an unreadable file are reported as `root export` failures naming the target instead of being skipped or raising a raw `EISDIR`; on a directory the install would have failed at import too. It accepts `export function apply`, `export async function apply`, `export const apply = ...` (also `let` and `var`), `export { apply }` (including `export { helper as apply }`), `exports.apply = ...`, and an `apply` property in `module.exports = { ... }`. A comment such as `// TODO: export function apply() {}` is not an export, and `doctor` never imports or runs the plugin to decide. `verify --no-mount` runs `doctor` first, so it stops at that same check instead of packing a package whose root cannot load; `npm test` spawns the shipped CLI for both commands on the comment-only fixtures and the missing-file, missing-conditions-file, string-root missing-file and directory fixtures, requires every one to exit `1` with a `root export:` line and no raw `EISDIR`, and requires `verify` to report `stopped at doctor` rather than a `pack:` failure. The unmodified scaffold still passes both commands.
+The `root export` check is a source check, not an install. `doctor` resolves the module the loader imports — `exports["."]` when it is a string or a conditions object (`default`, `import`, `require`, `node`, `module-sync`), otherwise `main` — then checks that the path is a readable regular file, removes comments and the contents of string, template and regex literals, and looks for a real export. A missing file, a directory and an unreadable file are reported as `root export` failures naming the target instead of being skipped or raising a raw `EISDIR`; on a directory the install would have failed at import too. It accepts `export function apply`, `export async function apply`, `export const apply = ...` (also `let` and `var`), `export { apply }` (including `export { helper as apply }`), `exports.apply = ...`, and an `apply` property in `module.exports = { ... }`. A comment such as `// TODO: export function apply() {}` is not an export, and `doctor` never imports or runs the plugin to decide.
+
+`verify --no-mount` does not reopen the path `doctor` read. It imports the installed package by its bare name, the way the loader does, so Node's `exports` resolution decides. An `exports` map with no `.` entry therefore fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file, and `verify` reports a `root export` failure naming the missing `.` export instead of passing. `verify --no-mount` still runs `doctor` first, so a root the source check already rejects stops at that same check instead of packing. `npm test` spawns the shipped CLI for both commands on the comment-only fixtures and the missing-file, missing-conditions-file, string-root missing-file and directory fixtures, requires every one to exit `1` with a `root export:` line and no raw `EISDIR`, and requires `verify` to report `stopped at doctor` rather than a `pack:` failure. The unmodified scaffold still passes both commands.
 
 Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged. `doctor --remote` and `audit --remote` run the same manifest and README checks (`name`, `version`, `engines.dsh`, `dsh field`, `files list`, `readme`) against the `package.json` and README GitHub serves, then check the files the manifest points at, so a bad package name or a README with no Requirements heading is reported before a clone or install. The `name` check is pinned at the process boundary: `npm test` expects the shipped CLI to reject a missing, empty and malformed name (`accepted=0/3`) and to accept a valid plain or scoped control.
 
@@ -914,7 +925,7 @@ ok  packed 5 file(s), installed the tarball, mounted the panel
     My panel This panel came from dsh-plugin init. Clicks: 0
 ```
 
-It packs, installs that tarball into a throwaway directory, then mounts the bundle **from the installed copy**. A bundle that only inserts a subpath patch needs no root module; in that case there is nothing to import, and the success line says it skipped the host import instead of claiming one ran. When the `files` list drops the panel:
+It packs, installs that tarball into a throwaway directory, then mounts the bundle **from the installed copy**. The host half is imported by the package's bare name, exactly as the loader imports it, so an `exports` map with no `.` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file; `verify --no-mount` reports that as a `root export` failure naming the missing `.` export. A package that declares neither `exports` nor `main` has no root module at all; there is nothing to import, and the success line says it skipped the host import instead of claiming one ran. When the `files` list drops the panel:
 
 ```sh
 $ npx dsh-plugin-toolkit verify .
@@ -965,7 +976,7 @@ The install reports success and nothing shows up. In this order:
 3. Create and push the tag, which starts the plugin's release workflow.
 4. Poll the registry until it actually serves that version, reporting each wait.
 5. Write the index entry with the publish time **the registry reports**, not the local clock. It waits for `time[version]` specifically: the abbreviated registry document has no `time` field, and an entry with a null timestamp is rejected by the market checker.
-6. With `--pr`: commit that entry on `market/<version>`, push it, and open the pull request. With `--merge` as well: wait for `gh pr checks` to settle, then squash-merge.
+6. With `--pr`: commit that entry on `market/<version>`, push it, and open the pull request. With `--merge` as well: wait for `gh pr checks` to settle, then squash-merge. When the committed index already carries this version with the same publish time there is nothing to commit, so the branch and PR steps are skipped instead of failing at `git commit`. An entry written by an earlier run without `--pr` is still uncommitted, so a later `--pr` run commits it and opens the PR.
 
 ```sh
 npx dsh-plugin release . --pr --merge
@@ -979,7 +990,7 @@ checks settled after 1s (1 look(s))
 merged
 ```
 
-Without `--pr` it prints the `git add` / `gh pr create` commands instead of running them; `--dry-run` prints the whole sequence before anything happens. A re-run after a failure is safe: when the tag already points at HEAD it is reused rather than recreated, the release continues with the registry wait, and the same version with the same publish time is a no-op.
+Without `--pr` it prints the `git add` / `gh pr create` commands instead of running them; `--dry-run` prints the whole sequence before anything happens. A re-run after a failure is safe: when the tag already points at HEAD it is reused rather than recreated, the release continues with the registry wait, and the same version with the same publish time is a no-op once the index entry is committed. A no-op release prints `<index> already carried <version>; nothing to commit`, exits `0`, leaves `git log -1` unchanged, and creates no `market/<version>` branch, even when `--pr` or `--merge` is passed. A different publish time is not a no-op: the release stops at `index`, names the indexed and registry timestamps in the error, exits `1`, and creates no `market/<version>` branch.
 
 If that tag points at another commit, the release does not move it. It exits `1`
 and names the tag, the commit it points at, HEAD, and the recovery:
