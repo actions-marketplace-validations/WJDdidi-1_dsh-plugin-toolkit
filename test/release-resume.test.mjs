@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +10,8 @@ import { release } from '../lib/release.mjs';
 import { run } from '../lib/cli.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(here, '..');
+const CLI = path.join(ROOT, 'bin', 'dsh-plugin.mjs');
 const fixture = path.join(here, 'fixtures', 'good');
 const mismatchFixture = path.join(here, 'fixtures', 'release-timestamp-mismatch');
 
@@ -216,7 +218,193 @@ test('the CLI pushes a local-only tag instead of reporting a false success', asy
   assert.equal(tagHash(origin, tag), tagHash(dir, tag));
 });
 
-test('a failed push followed by a retry leaves exactly one tag on origin', async () => {
+test('the CLI names a failed push, then the corrected origin pushes the tag on retry', async () => {
+  const { dir, origin, manifest, version } = releaseRepo();
+  const tag = `plugin-v${version}`;
+  const timestamp = '2026-11-05T12:00:00.000Z';
+  const missingOrigin = path.join(path.dirname(dir), 'missing-origin.git');
+  assert.equal(fs.existsSync(missingOrigin), false);
+  git(dir, ['remote', 'set-url', 'origin', missingOrigin]);
+
+  // The remote is unreachable, so the tag is created locally and the push is
+  // the step that fails. That must be a named stage, not a raw exec stack.
+  const firstLines = [];
+  const firstErrors = [];
+  const originalFetch = globalThis.fetch;
+  let firstCode;
+  try {
+    globalThis.fetch = registryHit(version, timestamp);
+    firstCode = await run(['release', dir, '--budget', '5'], {
+      log: (line) => firstLines.push(String(line)),
+      error: (line) => firstErrors.push(String(line)),
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(firstCode, 1, [...firstLines, ...firstErrors].join('\n'));
+  const firstError = firstErrors.join('\n');
+  assert.match(firstError, /dsh-plugin release stopped at git/u);
+  assert.ok(firstError.includes(tag), firstError);
+  assert.match(firstError, /does not appear to be a git repository|Could not read from remote repository/u);
+  assert.match(firstError, /still local/u);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), []);
+  assert.deepEqual(readVersions(dir, manifest.name), []);
+
+  const localTag = tagHash(dir, tag);
+
+  // Point origin back at the bare repository. The same working tree re-runs,
+  // resumes from the local tag, and this time the push must reach origin.
+  git(dir, ['remote', 'set-url', 'origin', origin]);
+  const secondLines = [];
+  const secondErrors = [];
+  let secondCode;
+  try {
+    globalThis.fetch = registryHit(version, timestamp);
+    secondCode = await run(['release', dir, '--budget', '5'], {
+      log: (line) => secondLines.push(String(line)),
+      error: (line) => secondErrors.push(String(line)),
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(secondCode, 0, [...secondLines, ...secondErrors].join('\n'));
+  assert.ok(secondLines.join('\n').includes(`tagged ${tag}, npm served ${manifest.name}@${version}`), secondLines.join('\n'));
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), [tag]);
+  assert.equal(tagHash(dir, tag), localTag);
+  assert.equal(tagHash(origin, tag), localTag);
+});
+
+test('the shipped CLI names the failed push, then pushes the tag after the remote is fixed', (t) => {
+  const { dir, origin, version } = releaseRepo();
+  const tag = `plugin-v${version}`;
+  const timestamp = '2026-11-05T12:00:00.000Z';
+  const missingOrigin = path.join(path.dirname(dir), 'missing-origin.git');
+  git(dir, ['remote', 'set-url', 'origin', missingOrigin]);
+
+  // The real entry point, not `run()` in this process: a regression in bin/ or
+  // in the top-level error handling must not turn this back into a raw stack.
+  const first = spawnSync(process.execPath, [CLI, 'release', dir, '--budget', '5'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+  const firstOutput = `${first.stdout}\n${first.stderr}`;
+  assert.equal(first.status, 1, firstOutput);
+  assert.match(first.stderr, /dsh-plugin release stopped at git/u);
+  assert.ok(first.stderr.includes(tag), firstOutput);
+  assert.match(first.stderr, /does not appear to be a git repository|Could not read from remote repository/u);
+  assert.match(first.stderr, /still local/u);
+  assert.doesNotMatch(first.stderr, /Command failed:/u);
+  assert.doesNotMatch(first.stderr, /^\s+at /mu);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), []);
+  const localTag = tagHash(dir, tag);
+
+  // Point origin at the bare repository and re-run the same working tree. npm
+  // is stubbed in the child so the check does not depend on the network.
+  const preload = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rel-registry-')), 'registry.cjs');
+  t.after(() => fs.rmSync(path.dirname(preload), { recursive: true, force: true }));
+  fs.writeFileSync(preload, `const version = process.env.DSH_TEST_VERSION;
+const timestamp = process.env.DSH_TEST_TIMESTAMP;
+globalThis.fetch = async () => ({
+  status: 200,
+  ok: true,
+  json: async () => ({ versions: { [version]: {} }, time: { [version]: timestamp } }),
+});
+`);
+  git(dir, ['remote', 'set-url', 'origin', origin]);
+  const second = spawnSync(process.execPath, ['--require', preload, CLI, 'release', dir, '--budget', '5'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: { ...process.env, DSH_TEST_VERSION: version, DSH_TEST_TIMESTAMP: timestamp },
+  });
+  assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
+  assert.ok(second.stdout.includes(`tagged ${tag}, npm served demo-plugin@${version}`), second.stdout);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), [tag]);
+  assert.equal(tagHash(dir, tag), localTag);
+  assert.equal(tagHash(origin, tag), localTag);
+});
+
+test('a push error after origin already has the tag still finishes the release', async () => {
+  const { dir, origin, manifest, version } = releaseRepo('1.2.3');
+  const tag = `plugin-v${version}`;
+  const timestamp = '2026-11-05T12:00:00.000Z';
+
+  // The tag is already on origin, but the next push exits non-zero: a
+  // post-receive hook or a dropped connection can do this after receive-pack
+  // accepted the ref. The release's goal is already met, so it must continue.
+  git(dir, ['tag', tag]);
+  git(dir, ['push', 'origin', tag]);
+
+  const realGit = (args) => git(dir, args);
+  const gitThatRejectsPush = (args) => {
+    if (args[0] === 'push') {
+      const error = new Error(`Command failed: git ${args.join(' ')}`);
+      error.stderr = 'error: RPC failed; the connection dropped after receive-pack accepted the ref';
+      throw error;
+    }
+    return realGit(args);
+  };
+
+  const result = await release({
+    dir,
+    git: gitThatRejectsPush,
+    fetch: registryHit(version, timestamp),
+    sleep: async () => {},
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result.failures ?? []));
+  assert.equal(result.tag, tag);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), [tag]);
+  assert.equal(tagHash(origin, tag), tagHash(dir, tag));
+  assert.deepEqual(readVersions(dir, manifest.name).map((entry) => entry.version), [version]);
+});
+
+test('a tag that origin holds at another object is named, not called local', async () => {
+  const { dir, origin, manifest, version } = releaseRepo('1.2.3');
+  const tag = `plugin-v${version}`;
+  const firstCommit = git(dir, ['rev-parse', 'HEAD']);
+  // Put the first commit on origin so a tag there can name it.
+  git(dir, ['push', 'origin', 'HEAD:refs/heads/main']);
+
+  // This checkout releases a second commit and tags it. Origin still has the
+  // tag at the first commit, so the push is a non-fast-forward rejection.
+  fs.writeFileSync(path.join(dir, 'after-tag.txt'), 'second\n');
+  git(dir, ['add', '.']);
+  git(dir, ['commit', '-q', '-m', 'two']);
+  git(dir, ['tag', tag]);
+  execFileSync('git', ['--git-dir', origin, 'tag', tag, firstCommit]);
+  const localObject = tagHash(dir, tag);
+  const remoteObject = git(origin, ['rev-parse', tag]);
+  assert.notEqual(localObject, remoteObject);
+
+  const result = await release({
+    dir,
+    fetch: registryHit(version, '2026-11-05T12:00:00.000Z'),
+    sleep: async () => {},
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'git');
+  const message = result.failures[0].message;
+  assert.ok(message.includes('origin already has'), message);
+  assert.ok(message.includes(remoteObject), message);
+  assert.ok(message.includes(localObject), message);
+  assert.match(message, /neither tag was moved/u);
+  assert.doesNotMatch(message, /still local/u);
+  assert.deepEqual(tags(origin), [tag]);
+  assert.equal(tagHash(origin, tag), remoteObject);
+  assert.deepEqual(readVersions(dir, manifest.name), []);
+});
+
+test('a failed push stops at the git stage and a retry leaves exactly one tag on origin', async () => {
   const { dir, origin, version } = releaseRepo();
   const tag = `plugin-v${version}`;
   const timestamp = '2026-11-05T12:00:00.000Z';
@@ -226,10 +414,13 @@ test('a failed push followed by a retry leaves exactly one tag on origin', async
   fs.mkdirSync(path.dirname(hook), { recursive: true });
   fs.writeFileSync(hook, '#!/bin/sh\necho "push rejected by the test" >&2\nexit 1\n', { mode: 0o755 });
 
-  await assert.rejects(
-    release({ dir, fetch: registryHit(version, timestamp), sleep: async () => {} }),
-    /git push/u,
-  );
+  const first = await release({ dir, fetch: registryHit(version, timestamp), sleep: async () => {} });
+  assert.equal(first.ok, false);
+  assert.equal(first.stage, 'git');
+  const message = first.failures[0].message;
+  assert.ok(message.includes(tag), message);
+  assert.match(message, /push rejected by the test|pre-receive hook declined/u);
+  assert.match(message, /still local|could not push/u);
   assert.deepEqual(tags(dir), [tag]);
   assert.deepEqual(tags(origin), []);
 

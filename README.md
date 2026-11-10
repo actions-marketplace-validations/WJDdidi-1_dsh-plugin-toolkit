@@ -1010,6 +1010,26 @@ Run those two commands when the old tag really was a mistake, then release
 again. A tag at HEAD needs no separate `--resume`: it takes the resume path
 automatically.
 
+A tag that cannot be pushed is also its own stage, not a raw `git` crash. The
+release names the tag and git's reason, exits `1`, and leaves the local tag in
+place:
+
+```
+dsh-plugin release stopped at git
+  ✗ git: could not run `git push origin plugin-v0.4.0`: fatal: '/tmp/missing.git' does not appear to be a git repository; fatal: Could not read from remote repository. The tag is still local; fix the remote and re-run release to push it.
+```
+
+Fix the remote (for example `git remote set-url origin <url>`) and run the same
+command again. The local tag already points at HEAD, so the re-run resumes and
+pushes it instead of creating it again. A push that exits non-zero is checked
+against origin before it is reported: if the remote already has the same tag
+object, the release continues (the ref landed despite the error); if origin has
+that tag at a different commit, the error names both objects and says neither
+tag was moved, because re-running cannot resolve a published-tag conflict. With
+`--pr`, a rejected push of the `market/<version>` branch is reported the same
+way: the branch is named and git's own reason is quoted instead of the exec
+wrapper's `Command failed:` line.
+
 ### When nothing publishes for you
 
 `release` assumes a tag starts a workflow that publishes. Repositories without

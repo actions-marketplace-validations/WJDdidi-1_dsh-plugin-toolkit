@@ -51,7 +51,11 @@ test('an existing branch is reused instead of failing the one step that is safe 
 
 test('a failed push stops before opening a pull request', async () => {
   const git = (args) => {
-    if (args[0] === 'push') throw new Error('rejected');
+    if (args[0] === 'push') {
+      const error = new Error('Command failed: git push -u origin market/0.0.3');
+      error.stderr = 'remote: permission denied\n';
+      throw error;
+    }
     return '';
   };
   let prCalls = 0;
@@ -63,8 +67,35 @@ test('a failed push stops before opening a pull request', async () => {
   const result = await openIndexPr({ dir: '.', indexFile: 'market/index.json', version: '0.0.3', git, gh });
   assert.equal(result.ok, false);
   assert.equal(result.stage, 'push');
-  assert.match(result.reason, /rejected/);
+  // The branch is named and git's answer is quoted; the exec wrapper's raw
+  // "Command failed:" line is not the useful part of a push failure.
+  assert.match(result.reason, /could not push market\/0\.0\.3 to origin/u);
+  assert.match(result.reason, /permission denied/u);
+  assert.doesNotMatch(result.reason, /Command failed:/u);
   assert.equal(prCalls, 0);
+});
+
+test('a push failure reported only on stdout still names its reason', async () => {
+  const git = (args) => {
+    if (args[0] === 'push') {
+      const error = new Error('Command failed: git push -u origin market/0.0.4');
+      error.stdout = 'remote rejected the branch: protected\n';
+      throw error;
+    }
+    return '';
+  };
+
+  const result = await openIndexPr({
+    dir: '.',
+    indexFile: 'market/index.json',
+    version: '0.0.4',
+    git,
+    gh: () => 'url',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'push');
+  assert.match(result.reason, /remote rejected the branch: protected/u);
+  assert.doesNotMatch(result.reason, /Command failed:/u);
 });
 
 test('checks are waited on until they settle, and a failure is reported not retried', async () => {
