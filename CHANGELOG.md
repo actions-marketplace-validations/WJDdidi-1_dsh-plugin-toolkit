@@ -1,3 +1,36 @@
+## 0.20.22
+
+- **A missing `audit --home` value is refused before the scan, and a later
+  `--home` cannot hide it.** The parser used to leave the missing path only in
+  the value slot, so a second `--home <dir>` overwrote the typo and the command
+  scanned anyway; every missing spelling is now recorded through the rest of
+  parsing. `audit --home`, `audit --home --timeout 50`, `audit --home --json`
+  and `audit --home --home <dir>` each exit `2` with `--home needs a directory
+  path` on stderr and no profile report on stdout, while `audit --home <dir>`
+  against the one-declared-plugin fixture still prints its `missing` row and
+  exits `1`. The README says a bare `--home` is a usage error, not a request to
+  scan `$HOME/.dsh` or a folder named after the next flag. A process-boundary
+  test spawns the shipped CLI for all three missing spellings and requires exit
+  `2` with no report, then runs the same binary against a checked-in clean home
+  and requires exit `0` with its `clean-plugin` row, so the refusal cannot pass
+  by breaking every scan.
+
+## 0.20.21
+
+- **`doctor --fix --write` repairs a manifest saved with a UTF-8 BOM.** `doctor`
+  read the BOM away, but the repair write re-read the raw file with `JSON.parse`,
+  so it printed the planned `engines.dsh` edit and then failed with a bare
+  `Unexpected token` on the same manifest it had just accepted. Both repair
+  entry points (`doctor --fix` and `fix --engines`) now read through `doctor`'s
+  one BOM-aware manifest source, keep the existing indentation and line endings,
+  and write through one shared helper that starts from the BOM-stripped source,
+  so the rewritten file has no BOM (not a doubled one) and is valid JSON. A
+  write failure is now reported as a `manifest` failure by both commands instead
+  of escaping from `fix --engines`. Four process-level tests run the literal
+  `doctor . --fix --write` and `fix . --engines --write` from a temp plugin with
+  no `engines.dsh`: both repair a BOM copy and a no-BOM control, and both
+  normalize a doubled BOM without adding another one.
+
 ## 0.20.20
 
 - **A repeated `release --pr` is a no-op when the committed index already

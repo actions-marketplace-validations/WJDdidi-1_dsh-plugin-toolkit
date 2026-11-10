@@ -309,6 +309,12 @@ profile where the app silently skipped a plugin. It exits `0` when every
 installed plugin is loaded and valid. If no graph was read (`--host` omitted),
 the loaded column is `?` and only hard failures change the exit code.
 
+`audit --home <dir>` scans a different profile home; both `~/.dsh` and
+`~\.dsh` expand. A bare `--home`, or one followed by another flag such as
+`--timeout 50` or `--json`, is a missing value rather than a request to scan
+`$HOME/.dsh` or a folder literally named after the flag: the command exits `2`,
+names `--home`, and prints no profile report.
+
 Without `--host` the loaded column is `?`, because guessing would be worse than
 saying nothing. Only packages that declare a `dsh` field are audited — the rest of
 `node_modules` is ordinary dependencies, and auditing those is noise.
@@ -1060,7 +1066,9 @@ npx dsh-plugin-toolkit@latest verify .
 
 **Will `doctor --fix` rewrite my `package.json`?**
 Only with `--write`. Without it the command prints the plan and stops; with it,
-it applies the edits in the plan and runs the checks again.
+it applies the edits in the plan and runs the checks again. A manifest saved
+with a UTF-8 BOM is read and repaired through the same path, and the rewritten
+file no longer starts with the BOM; `fix --engines --write` uses that path too.
 
 **`doctor` passes, but the panel still does not appear. What next?**
 `doctor` checks the manifest and source without executing the plugin. `verify`

@@ -180,8 +180,11 @@ version, not a range.
 Use a higher range only when the plugin actually needs host APIs from a later
 release. The edit is one field; do not replace the whole `engines` object.
 
-`doctor --fix . --write` makes this edit and re-runs the checks. If the host
-range is the only thing you want to touch, the narrower command is:
+`doctor --fix . --write` makes this edit and re-runs the checks. It reads the
+manifest through the same BOM-aware path as `doctor`, so a `package.json` saved
+with a UTF-8 BOM is repaired too and the rewritten file starts with `{`, not the
+BOM. The narrower command uses the same reader and writer, so it leaves the same
+plain JSON behind. If the host range is the only thing you want to touch, use:
 
 ```sh
 npx dsh-plugin-toolkit@latest fix . --engines --write

@@ -1,0 +1,16 @@
+{
+  "name": "clean-plugin",
+  "version": "1.0.0",
+  "files": [
+    "README.md",
+    "dsh.bundle.patch.yml"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "dsh.bundle.patch.yml"
+    }
+  }
+}
