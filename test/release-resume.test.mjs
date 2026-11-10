@@ -164,6 +164,90 @@ test('the CLI finishes the release after the first run stopped at the registry',
   assert.equal(tagHash(origin, tag), remoteTag);
 });
 
+test('a tag that exists only locally is pushed when the release resumes', async () => {
+  const { dir, origin, manifest, version } = releaseRepo();
+  const tag = `plugin-v${version}`;
+  const timestamp = '2026-11-05T12:00:00.000Z';
+
+  // The state a failed `git push` leaves behind: the local tag exists and
+  // points at HEAD, but the remote never received it.
+  git(dir, ['tag', tag]);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), []);
+
+  const result = await release({
+    dir,
+    fetch: registryHit(version, timestamp),
+    sleep: async () => {},
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result.failures ?? []));
+  assert.equal(result.tag, tag);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), [tag]);
+  assert.equal(tagHash(origin, tag), tagHash(dir, tag));
+  assert.deepEqual(readVersions(dir, manifest.name).map((entry) => entry.version), [version]);
+});
+
+test('the CLI pushes a local-only tag instead of reporting a false success', async () => {
+  const { dir, origin, manifest, version } = releaseRepo();
+  const tag = `plugin-v${version}`;
+  const timestamp = '2026-11-05T12:00:00.000Z';
+  git(dir, ['tag', tag]);
+  assert.deepEqual(tags(origin), []);
+
+  const lines = [];
+  const originalFetch = globalThis.fetch;
+  let code;
+  try {
+    globalThis.fetch = registryHit(version, timestamp);
+    code = await run(['release', dir, '--budget', '5'], {
+      log: (line) => lines.push(String(line)),
+      error: (line) => lines.push(String(line)),
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(code, 0, lines.join('\n'));
+  assert.ok(lines.join('\n').includes(`tagged ${tag}, npm served ${manifest.name}@${version}`), lines.join('\n'));
+  assert.deepEqual(tags(origin), [tag]);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.equal(tagHash(origin, tag), tagHash(dir, tag));
+});
+
+test('a failed push followed by a retry leaves exactly one tag on origin', async () => {
+  const { dir, origin, version } = releaseRepo();
+  const tag = `plugin-v${version}`;
+  const timestamp = '2026-11-05T12:00:00.000Z';
+
+  // Reject every push while still allowing the local tag to be created.
+  const hook = path.join(origin, 'hooks', 'pre-receive');
+  fs.mkdirSync(path.dirname(hook), { recursive: true });
+  fs.writeFileSync(hook, '#!/bin/sh\necho "push rejected by the test" >&2\nexit 1\n', { mode: 0o755 });
+
+  await assert.rejects(
+    release({ dir, fetch: registryHit(version, timestamp), sleep: async () => {} }),
+    /git push/u,
+  );
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), []);
+
+  fs.rmSync(hook, { force: true });
+  const retry = await release({
+    dir,
+    fetch: registryHit(version, timestamp),
+    sleep: async () => {},
+  });
+
+  assert.equal(retry.ok, true, JSON.stringify(retry.failures ?? []));
+  assert.equal(retry.tag, tag);
+  assert.deepEqual(tags(dir), [tag]);
+  assert.deepEqual(tags(origin), [tag]);
+  assert.equal(tags(origin).length, 1);
+  assert.equal(tagHash(origin, tag), tagHash(dir, tag));
+});
+
 /** A repository whose tag and index both already describe a finished release. */
 function alreadyReleasedRepo(version = '1.0.0', timestamp = '2026-11-05T12:00:00.000Z') {
   const state = releaseRepo(version);

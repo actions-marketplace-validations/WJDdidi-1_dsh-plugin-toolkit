@@ -1,5 +1,15 @@
 ## 0.20.22
 
+- **A retry pushes a tag that exists only locally.** When `release` created
+  `plugin-v<version>` and then failed at `git push`, the next run saw the local
+  tag at HEAD, took the resume path, skipped both the tag and the push, and
+  could report success while the remote still had no tag. The resume path now
+  pushes the existing tag before the registry wait. Pushing a tag the remote
+  already has at the same commit is a no-op, so repeated retries leave exactly
+  one tag on origin. A test reproduces the failed-push state, retries, and
+  requires the bare origin to list the tag exactly once; a CLI test starts from
+  a local-only tag and requires exit `0` with the tag on origin.
+
 - **A missing `audit --home` value is refused before the scan, and a later
   `--home` cannot hide it.** The parser used to leave the missing path only in
   the value slot, so a second `--home <dir>` overwrote the typo and the command
