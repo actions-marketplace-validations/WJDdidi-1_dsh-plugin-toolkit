@@ -87,8 +87,13 @@ export function evaluate(checkRuns, opts = {}) {
   const pending = [];
   const green = [];
 
+  // GitHub can leave status at "in_progress" after it has already written a
+  // conclusion (and completed_at). A conclusion is the verdict: treating the
+  // stale status as pending refuses a commit whose every real check passed.
+  const settled = (run) => run.status === 'completed' || (run.conclusion ?? null) !== null;
+
   const judge = (run) => {
-    if (run.status !== 'completed') {
+    if (settled(run) === false) {
       pending.push(run);
       return;
     }
@@ -125,14 +130,14 @@ export function evaluate(checkRuns, opts = {}) {
       warnings.push(`${group.join(' or ')} is not present (best effort)`);
       continue;
     }
-    const ok = present.some((run) => run.status === 'completed' && run.conclusion === 'success');
+    const ok = present.some((run) => run.conclusion === 'success');
     if (ok === true) {
       for (const run of present) if (green.includes(run) === false) green.push(run);
       continue;
     }
     const decided = present.filter(
       (run) =>
-        run.status === 'completed' &&
+        settled(run) === true &&
         (FAILING.has(run.conclusion ?? '') ||
           (run.conclusion === 'cancelled' && capacityCancelled(run, jobOf(run.name)) === false)),
     );

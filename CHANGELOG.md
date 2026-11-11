@@ -1,5 +1,15 @@
 ## 0.20.24
 
+- **A check run with a conclusion is settled even if GitHub leaves its status
+  at `in_progress`.** On 2026-11-11 GitHub wrote `conclusion: success` and
+  `completed_at` for `the tool on a real plugin` but kept `status:
+  in_progress`; the gate read only the status, called the commit still checked,
+  and refused `plugin-v0.20.24` twice while every real check had passed. A
+  conclusion now counts as the verdict in both required and best-effort checks,
+  and a failure conclusion still refuses. A check with no conclusion is still
+  pending, so this does not turn a queued job green. A regression test feeds the
+  exact `in_progress`/`success` pair and requires the commit to publish.
+
 - **`doctor` applies negated `files` entries instead of passing a package npm
   will publish without its client.** `files: ["lib", "!lib/secret.js"]` ships
   the folder but drops `lib/secret.js`; the check saw `lib` cover the exported

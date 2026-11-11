@@ -89,6 +89,37 @@ test('a check still running blocks the publish', () => {
   assert.match(verdict.why, /still being checked: the tool on a real plugin/u);
 });
 
+test('a conclusion settles a check even when GitHub leaves the status in_progress', () => {
+  const lagging = (run) => ({
+    ...run,
+    status: 'in_progress',
+    conclusion: 'success',
+    completed_at: '2026-11-11T21:04:43Z',
+  });
+  const runs = allGreen().map((run) =>
+    run.name === 'the tool on a real plugin' ? lagging(run) : run,
+  );
+  const verdict = verdictOf(runs);
+  assert.equal(verdict.ok, true, verdict.why);
+  assert.equal(verdict.pending.length, 0);
+  assert.equal(verdict.green.some((run) => run.name === 'the tool on a real plugin'), true);
+
+  // The best-effort alternative is settled by its conclusion too.
+  const others = runs.filter((run) => run.name !== 'arm64 job did not hide a test failure');
+  const arm = lagging(green('arm64 job did not hide a test failure'));
+  const withArm = verdictOf([...others, arm]);
+  assert.equal(withArm.ok, true, withArm.why);
+  assert.equal(withArm.warnings.length, 0);
+
+  // A failure conclusion is a verdict, not a pending check.
+  const failed = verdictOf(
+    runs.map((run) => (run.name === 'the tool on a real plugin' ? { ...run, conclusion: 'failure' } : run)),
+  );
+  assert.equal(failed.ok, false);
+  assert.match(failed.why, /the tool on a real plugin: failure/u);
+  assert.equal(failed.pending.length, 0);
+});
+
 test('the arm64 gate is best effort: absent or queued warns, failing refuses', () => {
   const runs = allGreen().filter((run) => run.name !== 'arm64 job did not hide a test failure');
 
