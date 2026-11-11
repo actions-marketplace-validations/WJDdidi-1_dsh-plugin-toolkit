@@ -1,5 +1,17 @@
 ## 0.20.24
 
+- **`doctor` applies negated `files` entries instead of passing a package npm
+  will publish without its client.** `files: ["lib", "!lib/secret.js"]` ships
+  the folder but drops `lib/secret.js`; the check saw `lib` cover the exported
+  client and exited `0`, so the installed plugin was missing code its own
+  `exports["./client"]` named. A leading `!` now removes what the positive
+  entries shipped — a file, a folder and its subtree, or a basename pattern at
+  any depth — and a later positive entry can re-include a path. The same
+  manifest without the `!` entry still passes. A committed fixture feeds one
+  `files` list to both `npm pack` and `doctor`: the suite requires the packer to
+  leave `lib/secret.js` out of the tarball and `doctor` to report it on three
+  consecutive runs, so the check cannot drift from the packer.
+
 - **A failed `market/<version>` push is named, not a raw exec error.** With
   `--pr`, a rejected or denied branch push used to surface only as
   `Command failed: git push -u origin market/<version>` from the exec wrapper.

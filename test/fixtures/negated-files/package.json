@@ -1,0 +1,31 @@
+{
+  "name": "negated-files-fixture",
+  "version": "1.0.0",
+  "description": "A package whose files list ships lib/ but excludes the exported client",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib",
+    "!lib/secret.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/secret.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

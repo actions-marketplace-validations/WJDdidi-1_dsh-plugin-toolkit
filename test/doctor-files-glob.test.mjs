@@ -48,6 +48,28 @@ const FIXTURES = [
     omitted: [],
     failure: null,
   },
+  {
+    // npm applies a leading `!` as an exclusion: `lib` names the folder, but
+    // `!lib/secret.js` removes the client the manifest points at.
+    name: 'negated-entry',
+    files: ['index.js', 'lib', '!lib/secret.js', 'cordis.patch.yml', 'README.md'],
+    client: 'lib/secret.js',
+    onDisk: ['lib/secret.js', 'lib/client.js'],
+    shipped: ['index.js', 'lib/client.js'],
+    omitted: ['lib/secret.js'],
+    failure: /files does not ship lib\/secret\.js/u,
+  },
+  {
+    // The control for the fixture above: without the `!` entry the same folder
+    // ships the client, so doctor has to stay quiet.
+    name: 'folder-entry-client',
+    files: ['index.js', 'lib', 'cordis.patch.yml', 'README.md'],
+    client: 'lib/secret.js',
+    onDisk: ['lib/secret.js', 'lib/client.js'],
+    shipped: ['index.js', 'lib/secret.js', 'lib/client.js'],
+    omitted: [],
+    failure: null,
+  },
 ];
 
 function writeFixture(root, fixture) {

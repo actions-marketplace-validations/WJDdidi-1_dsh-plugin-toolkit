@@ -61,3 +61,18 @@ test('files globs use npm path semantics instead of a prefix', () => {
   assert.equal(isShipped('lib/nested/deep.js', ['lib/*']), true);
   assert.equal(isShipped('lib/nested/deep.js', ['lib/**/*.js']), true);
 });
+
+test('a negated files entry removes paths the positive entries would ship', () => {
+  // `files: ["lib", "!lib/secret.js"]` is npm's way to ship the folder without
+  // the file the manifest points at, so doctor must not treat `lib` as enough.
+  assert.equal(isShipped('lib/secret.js', ['lib']), true);
+  assert.equal(isShipped('lib/secret.js', ['lib', '!lib/secret.js']), false);
+  assert.equal(isShipped('lib/client.js', ['lib', '!lib/secret.js']), true);
+  // A basename pattern ignores at any depth, while a slash pattern is relative
+  // to the package root and `*` still stays inside one folder.
+  assert.equal(isShipped('lib/secret.js', ['lib', '!*.js']), false);
+  assert.equal(isShipped('lib/secret.js', ['lib', '!lib/*.js']), false);
+  assert.equal(isShipped('lib/nested/secret.js', ['lib', '!lib/nested']), false);
+  assert.equal(isShipped('lib/nested/secret.js', ['lib', '!lib/{secret,private}.js']), true);
+  assert.equal(isShipped('lib/secret.js', ['lib', '!lib/{secret,private}.js']), false);
+});

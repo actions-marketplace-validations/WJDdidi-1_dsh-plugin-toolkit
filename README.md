@@ -697,7 +697,7 @@ the diff in the terminal.
 | `dsh field` | `dsh.bundle.patch` must exist for the host to load the plugin |
 | `patch file` | The path declared above must be a real file |
 | `client entry` | If `dsh.client` is declared, the bundle has to be there |
-| `files list` | Every path `package.json` points at (`exports`, patch, client) must be covered by `files` |
+| `files list` | Every path `package.json` points at (`exports`, patch, client) must be covered by `files`; a leading `!` excludes what the positive entries would ship |
 | `root export` | The loader imports the bare package name; if that module is missing, is a directory, is the CLI, exports no `apply`, or the `exports` map has no `.` entry, the row mounts nothing while the install reports success |
 
 The `root export` check is a source check, not an install. `doctor` resolves the module the loader imports — `exports["."]` when it is a string or a conditions object (`default`, `import`, `require`, `node`, `module-sync`), otherwise `main` — then checks that the path is a readable regular file, removes comments and the contents of string, template and regex literals, and looks for a real export. A missing file, a directory and an unreadable file are reported as `root export` failures naming the target instead of being skipped or raising a raw `EISDIR`; on a directory the install would have failed at import too. It accepts `export function apply`, `export async function apply`, `export const apply = ...` (also `let` and `var`), `export { apply }` (including `export { helper as apply }`), `exports.apply = ...`, and an `apply` property in `module.exports = { ... }`. A comment such as `// TODO: export function apply() {}` is not an export, and `doctor` never imports or runs the plugin to decide.

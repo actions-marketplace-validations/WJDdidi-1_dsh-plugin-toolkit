@@ -435,10 +435,17 @@ a parent folder (`lib/` covers `lib/client.js`), or by a glob (`dist/*`). Globs
 follow npm's own rules: `*` stays inside one path segment, so `*.js` ships
 root-level files only and does not cover `lib/client.js`; `dist/*` is shorthand
 for the whole `dist/` subtree, and `lib/*.js` covers only direct children of
-`lib`. `doctor --remote` and `audit --remote` run this same check against the
-manifest GitHub serves, so a glob that hides an exported file fails there too.
-This check is about the manifest; `verify` is what proves the packed tarball
-actually contains the file.
+`lib`. A leading `!` is npm's exclusion marker: `["lib", "!lib/secret.js"]`
+ships the folder but not the file, and a later positive entry can re-include
+what an earlier `!` removed. A path covered only by the positive entry and then
+removed by a negation is reported as missing. `doctor --remote` and
+`audit --remote` run this same check against the manifest GitHub serves, so a
+glob or a negation that hides an exported file fails there too. This check is
+about the manifest; `verify` is what proves the packed tarball actually contains
+the file. The test suite packs a committed negation fixture
+(`files: ["lib", "!lib/secret.js"]`), requires `npm pack` to leave the exported
+client out of the tarball, and requires `doctor` to report it on every run, so
+the prediction cannot drift from the packer.
 
 **What you see.**
 
