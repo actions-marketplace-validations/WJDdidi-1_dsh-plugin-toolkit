@@ -1,4 +1,41 @@
-## 0.20.24
+## 0.20.26
+
+- **The published tarball ships `scripts/preview.mjs`, so the command the
+  README tells a reader to run exists after install.** `files` listed the
+  benchmark and compatibility scripts but not the panel preview, so
+  `node scripts/preview.mjs /tmp/panel.html` worked only in a checkout and
+  failed with `MODULE_NOT_FOUND` in an installed package. The script is now in
+  the published file list. A test requires `npm pack --dry-run --json` to list
+  it and installs the packed tarball into a temp prefix, where the installed
+  copy must be byte-identical to the repository file.
+
+- **Every `node scripts/<name>.mjs` command a shipped README tells a reader to
+  run is now gated against the tarball.** The 0.20.12 `files` list shipped the
+  benchmark and compatibility scripts but not `scripts/preview.mjs`, and only
+  that one path had a dedicated test. A new test extracts every such command
+  from `README.md` and `README.zh.md`, compares the paths with
+  `npm pack --dry-run --json`, and fails with the omitted path. The 0.20.12 file
+  list is kept as a control, so the gate is shown to fail on the bug it closes.
+
+## 0.20.25
+
+- **`audit` reads a profile `package.json` saved with a UTF-8 BOM instead of
+  calling its bundles unlisted.** The profile reader passed the BOM straight to
+  `JSON.parse`, which throws; the catch then returned no bundles, so a plugin
+  that `dsh.profile.bundles` really did list was reported as missing and the
+  repair said `add it to dsh.profile.bundles` rather than `restart the app`.
+  `readProfileBundles` now strips a leading run of U+FEFF through the same
+  `stripBom` helper `readManifest` uses. A BOM profile lists its bundles and a
+  malformed profile still degrades to no bundles; tests cover one BOM, a
+  doubled BOM, the malformed control, and the audit row's restart repair.
+
+- **The BOM repair is locked at the CLI boundary.** A test replays the
+  six-trial experiment (three BOM profiles, three no-BOM controls), installing
+  the same listed plugin and pointing `audit --home` at a fake app graph that
+  does not contain it. It requires 6/6 `restart the app once to load it`
+  sentences and zero `does not list it`; on 0.20.12 the three BOM trials print
+  the unlisted cause and an edit the profile already has. The test spawns the
+  real CLI, so a future change that bypasses `readProfileBundles` cannot pass.
 
 - **A check run with a conclusion is settled even if GitHub leaves its status
   at `in_progress`.** On 2026-11-11 GitHub wrote `conclusion: success` and
@@ -21,6 +58,8 @@
   `files` list to both `npm pack` and `doctor`: the suite requires the packer to
   leave `lib/secret.js` out of the tarball and `doctor` to report it on three
   consecutive runs, so the check cannot drift from the packer.
+
+## 0.20.24
 
 - **A failed `market/<version>` push is named, not a raw exec error.** With
   `--pr`, a rejected or denied branch push used to surface only as

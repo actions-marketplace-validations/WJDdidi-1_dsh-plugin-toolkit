@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { audit, listInstalled } from '../lib/audit.mjs';
+import { audit, listInstalled, readProfileBundles } from '../lib/audit.mjs';
 import { checkClientDeclaration, checkClientEntry, doctor } from '../lib/doctor.mjs';
 
 function writePlugin(root, name, manifest, files = {}) {
@@ -212,6 +212,47 @@ test('a plugin with no dsh.bundle is told there is nothing to mount, not to rest
   assert.match(row.action, /dsh\.bundle\.patch/u);
   assert.match(lines.join('\n'), /demo-plugin.*not loaded.*no dsh\.bundle/u);
   assert.match(lines.join('\n'), /fix: .*dsh\.bundle\.patch/u);
+});
+
+test('a profile package.json with a UTF-8 BOM still lists its bundles', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-home-'));
+  const profileDir = writeProfile(home, 'desktop', ['demo-plugin']);
+  const profilePath = path.join(profileDir, 'package.json');
+  const raw = fs.readFileSync(profilePath, 'utf8');
+  // One BOM is what Notepad writes; a run of them is what a botched repair can
+  // leave. JSON.parse rejects either one, so the reader has to strip the run.
+  for (const prefix of ['\uFEFF', '\uFEFF\uFEFF']) {
+    fs.writeFileSync(profilePath, `${prefix}${raw}`);
+    assert.deepEqual(readProfileBundles({ home, profile: 'desktop' }).bundles, ['demo-plugin']);
+  }
+});
+
+test('a malformed profile package.json still degrades to no bundles', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-home-'));
+  const profileDir = writeProfile(home, 'desktop', ['demo-plugin']);
+  fs.writeFileSync(path.join(profileDir, 'package.json'), '{"dsh": {"profile": {"bundles": ["demo-plugin"]');
+  assert.deepEqual(readProfileBundles({ home, profile: 'desktop' }).bundles, []);
+});
+
+test('a plugin listed in a BOM profile is told to restart, not to edit dsh.profile.bundles again', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-home-'));
+  const profileDir = writeProfile(home, 'desktop', ['demo-plugin']);
+  const profilePath = path.join(profileDir, 'package.json');
+  fs.writeFileSync(profilePath, `\uFEFF${fs.readFileSync(profilePath, 'utf8')}`);
+  writePlugin(home, 'demo-plugin', goodManifest('demo-plugin'), goodFiles);
+  const lines = [];
+  const result = await audit({
+    home,
+    host: 'http://127.0.0.1:9',
+    fetchImpl: graphFetch([]),
+    io: { log: (line) => lines.push(line) },
+  });
+  const row = result.plugins.find((plugin) => plugin.name === 'demo-plugin');
+  assert.equal(row.loaded, false);
+  assert.match(row.reason, /listed in dsh\.profile\.bundles/u);
+  assert.match(row.action, /restart the app/u);
+  assert.doesNotMatch(row.action, /add "demo-plugin" to dsh\.profile\.bundles/u);
+  assert.match(lines.join('\n'), /fix: .*restart the app/u);
 });
 
 test('a plugin listed in dsh.profile.bundles is the one case that needs a restart', async () => {
