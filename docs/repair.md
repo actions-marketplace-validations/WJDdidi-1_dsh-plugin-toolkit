@@ -20,7 +20,9 @@ cloned, but it cannot edit anything. For a missing host range, `fix owner/repo
 apply it after cloning (or paste it into a pull request). Add `--engines --host
 <version>` to aim that patch at the host that rejected the install; once the
 repository is cloned, `fix . --engines --host <version> --write` applies the
-same range locally. The command creates parent directories and refuses to
+same range locally. The remote reader strips a UTF-8 BOM, so a manifest saved
+on Windows produces the same plan, and the patch removes the BOM while it adds
+the range. The command creates parent directories and refuses to
 replace an existing file unless `--force` is passed. A manifest whose range
 already clears the check is a success: the command prints `ok engines.dsh is
 already ...; nothing to apply` and exits `0` without writing a diff or patch

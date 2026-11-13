@@ -58,6 +58,20 @@ test('a manifest saved with a UTF-8 BOM is read instead of rejected', () => {
   assert.equal(report.notes.version, '1.2.3');
 });
 
+test('a README saved with a UTF-8 BOM still has its first-line Requirements heading', () => {
+  const dir = path.join(scratch(), 'plugin');
+  fs.cpSync(fixture('good'), dir, { recursive: true });
+  // The heading is the first line, so a BOM left in the text sits before `#`.
+  fs.writeFileSync(path.join(dir, 'README.md'), '\uFEFF## Requirements\n\n- DeepSeek Harness `>=0.2.0`\n');
+
+  const report = doctor(dir);
+  assert.equal(
+    report.failures.some((entry) => entry.check === 'readme'),
+    false,
+    `a BOM README was reported as missing its heading: ${JSON.stringify(report.failures)}`,
+  );
+});
+
 test('a broken manifest names the file and the parse failure', () => {
   const dir = path.join(scratch(), 'plugin');
   fs.cpSync(fixture('good'), dir, { recursive: true });

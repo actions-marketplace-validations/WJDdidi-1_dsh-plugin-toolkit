@@ -1,3 +1,80 @@
+## 0.20.29
+
+- **The tarball gate covers `examples/*.mjs` as well as `scripts/*.mjs`.** The
+  gate reads every `node <path>` command from `README.md` and `README.zh.md`,
+  compares the paths with `npm pack --dry-run --json` and with the published
+  `files` list, and names every missing path. Replaying the 0.20.12 file list
+  fails with the four example paths and `scripts/preview.mjs`; the current list
+  passes, so a future `files` edit that drops either kind of documented command
+  is caught before publication.
+
+- **A fresh install ships the four `node examples/*.mjs` commands its README
+  cites.** `files` listed only `examples/compatibility-sample/`, so the four
+  testkit examples worked in a checkout and were absent after `npm pack` +
+  `npm install`. The published file list now names `mount-a-bundle.mjs`,
+  `route-stubs.mjs`, `baseline.mjs` and `aria.mjs`. A regression test reads the
+  commands from the shipped READMEs, packs and installs the tarball into a temp
+  prefix, and requires each installed example to exist and match the repository
+  byte for byte.
+
+- **The BOM acceptance cases run through the real CLI.** Three checked-in
+  fixtures (`readme-plain`, `readme-bom`, `readme-bom-no-heading`) turn the
+  documented behavior into commands: the first two exit `0` with `ok`, and the
+  third exits `1` with the `readme` failure. The test asserts each fixture
+  README really does (or does not) start with U+FEFF before spawning
+  `bin/dsh-plugin.mjs doctor`, so a fixture that lost its BOM cannot make the
+  test pass for the wrong reason.
+
+## 0.20.28
+
+- **`doctor` reads a README saved with a UTF-8 BOM instead of calling its
+  Requirements section missing.** A file written by Notepad starts with U+FEFF,
+  so a README whose first line is `## Requirements` began with the marker
+  rather than `#`; both the local and `--remote` check reported `README.md has
+  no Requirements section` even though it was there. The shared README reader
+  now strips the BOM through the same helper the manifest reader uses, while a
+  BOM README without the heading still fails. Tests pin the local and remote
+  first-line cases and the missing-heading control.
+
+## 0.20.27
+
+- **`fix --remote` reads a `package.json` saved with a UTF-8 BOM, so the host
+  range can be aimed at the install that failed.** The remote reader passed the
+  BOM straight to `JSON.parse`, which threw; `fix --remote --engines --host 0.3.0`
+  exited `2` and `audit --remote` reported the manifest as invalid JSON, while
+  the local fixer repaired the same file. The remote reader now strips the BOM
+  through the same helper `doctor` uses, the planned diff removes it, and the
+  applied patch writes the host range without putting it back. A regression test
+  applies the remote patch to a BOM checkout and checks that the written
+  `>=0.3.0 <1.0.0` accepts `0.3.0` and rejects `1.0.0`.
+
+- **A requested app graph that cannot be read now fails the audit instead of
+  passing it.** `audit --host` logged `could not read the plugin graph: fetch
+  failed` and then exited `0` with a clean `?` row, so the documented CI gate
+  passed without observing which plugins the running app loaded. The command now
+  names the `/plugins/events` URL that failed, prints no plugin rows or clean
+  summary, and exits `2`; an audit without `--host` still exits `0` with `?` and
+  only hard failures change the exit code. A CLI regression runs the closed
+  `127.0.0.1:9` control and requires the `--host` run to exit `2` while the
+  same profile without it stays clean.
+
+- **`audit --remote --host` refuses a missing value instead of silently
+  dropping the compatibility answer.** A bare `--host` left the host unset, so
+  the command printed an audit without the comparison the user asked for, and
+  `--host --json` consumed `--json` as a version and compared every repository
+  against the literal text `--json`. A following option or the end of the line
+  is now a missing value: the CLI exits `2`, names the flag, and reads neither
+  GitHub nor a `--from` file. `fix --host` gets the same guard, so a bare flag
+  cannot fall back to planning the default range. Tests pin the bare flag,
+  `--host --json`, a missing `--from` file, a local `fix`, a valid control, and
+  the process boundary.
+
+- **Caret and tilde ranges on a wildcard major match npm's `*`.** `^*`, `~x`
+  and `~>*` are valid npm ranges that accept every stable host; the
+  compatibility parser called them malformed and answered `unknown`. They now
+  expand to any version, with the same pre-release exclusion npm applies, so
+  `audit --remote --host` and `doctor` agree with the installer.
+
 ## 0.20.26
 
 - **The published tarball ships `scripts/preview.mjs`, so the command the

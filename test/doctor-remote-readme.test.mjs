@@ -108,3 +108,22 @@ test('doctor --remote still exits 0 when the README states the declared range', 
   assert.match(result.stdout, /ok {2}demo-plugin@1\.2\.3 \(host >=0\.2\.0\) at acme\/probe/u);
   assert.equal(result.stderr, '');
 });
+
+test('doctor --remote reads a BOM README whose first line is the Requirements heading', (t) => {
+  const result = runDoctor(t, {
+    'README.md': '\uFEFF## Requirements\n\n- DeepSeek Harness `>=0.2.0`\n',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /ok {2}demo-plugin@1\.2\.3 \(host >=0\.2\.0\) at acme\/probe/u);
+  assert.doesNotMatch(result.stderr, /has no Requirements section/u);
+});
+
+test('doctor --remote still reports a BOM README with no Requirements heading', (t) => {
+  const result = runDoctor(t, {
+    'README.md': '\uFEFF# probe\n\nRequires dsh >=0.2.0.\n',
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /readme: README\.md has no Requirements section/u);
+});

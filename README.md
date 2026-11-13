@@ -306,8 +306,12 @@ that is actually broken.
 `audit` exits `1` when an installed plugin has a hard failure **or** when the
 running app did not load at least one installed plugin, so CI can gate on a
 profile where the app silently skipped a plugin. It exits `0` when every
-installed plugin is loaded and valid. If no graph was read (`--host` omitted),
-the loaded column is `?` and only hard failures change the exit code.
+installed plugin is loaded and valid. When `--host` is given but the app cannot
+be reached, the command has not observed the graph it was asked for: it prints
+the `/plugins/events` URL it could not read, prints no plugin rows or clean
+summary, and exits `2` so a CI gate cannot pass against an unreachable app.
+Without `--host`, the loaded column is `?` and only hard failures change the
+exit code.
 
 `audit --home <dir>` scans a different profile home; both `~/.dsh` and
 `~\.dsh` expand. A bare `--home`, or one followed by another flag such as
@@ -514,6 +518,9 @@ the DSH version to compare against, and `--json` for the machine-readable
 finding. `--jobs <n>` sets the batch width, and `--patch-dir <dir>` writes the
 host-targeted repair for each repository that needs one. The help text lists
 the same flags; a test fails if this section names a flag the CLI does not have.
+A bare `--host` is a usage error, not an audit without the comparison: the
+command exits `2` before it reads GitHub, and `--host --json` does not consume
+the `--json` flag as a version.
 
 `--host` still names the running app URL for a local `audit`; on `--remote` it
 is the DSH version to compare against. With `--json`, each finding gains
@@ -845,7 +852,8 @@ is still untouched. The same host-aware plan works with `--patch`:
 `fix <owner>/<repo> --remote --engines --host 0.3.0 --patch repair.patch` plans
 `>=0.3.0 <1.0.0` and prints why. After cloning, `fix . --engines --host 0.3.0
 --write` applies that same range; either path writes one that accepts the host
-and rejects the next major. `audit --remote --host <version> --patch-dir <dir>`
+and rejects the next major. The remote reader strips a UTF-8 BOM, so a manifest
+saved on Windows gives the same plan and the patch removes the BOM too. `audit --remote --host <version> --patch-dir <dir>`
 writes host-targeted repairs for a whole list. `git apply --check` is the dry
 run: it fails before changing anything if the manifest moved since the diff was
 printed. Commit the applied change as you would any other edit.

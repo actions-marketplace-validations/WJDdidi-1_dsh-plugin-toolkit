@@ -33,11 +33,12 @@ const cleanFiles = {
 };
 
 /**
- * Serve every repository from memory, optionally delaying a request. `active`
- * counts requests that have started but not answered; `maxActive` is the
- * concurrency the audit actually reached, not the concurrency it asked for.
+ * Serve every repository from memory, optionally delaying a request or holding
+ * it behind a caller-supplied gate. `active` counts requests that have started
+ * but not answered; `maxActive` is the concurrency the audit actually reached,
+ * not the concurrency it asked for.
  */
-function github({ delayMs = 0, delayRepo = () => undefined } = {}) {
+function github({ delayMs = 0, delayRepo = () => undefined, beforeRespond, afterRespond } = {}) {
   let active = 0;
   let maxActive = 0;
   const completed = [];
@@ -52,7 +53,9 @@ function github({ delayMs = 0, delayRepo = () => undefined } = {}) {
     try {
       const wait = delayRepo(slug, file) ?? delayMs;
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (typeof beforeRespond === 'function') await beforeRespond(slug, file);
       completed.push(slug);
+      if (typeof afterRespond === 'function') afterRespond(slug, file);
       if (cleanFiles[file] === undefined) {
         return { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) };
       }
@@ -64,6 +67,15 @@ function github({ delayMs = 0, delayRepo = () => undefined } = {}) {
   return { fetchImpl, completed, stats: () => ({ active, maxActive }) };
 }
 
+/** A promise whose resolver is available before anyone awaits it. */
+function deferred() {
+  let resolve;
+  const promise = new Promise((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
 function recorder() {
   const lines = [];
   return {
@@ -73,14 +85,26 @@ function recorder() {
   };
 }
 
-test('--jobs reads out of order but reports in the input order', async () => {
+test('--jobs reads out of order but reports in the input order', { timeout: 10_000 }, async () => {
   const targets = ['demo/slow', 'demo/fast', 'demo/middle'];
+  // The fake completes fast, then middle, then slow, whatever order the three
+  // workers happen to start in. Wall-clock delays cannot guarantee that: a
+  // loaded runner can pause this process between starting the workers, and a
+  // 20ms timer scheduled late can outlive an 80ms timer scheduled earlier.
+  // Hold each later repository until the previous one has answered its last
+  // file, so "slow finishes last" is a fact rather than a race.
+  const fastDone = deferred();
+  const middleDone = deferred();
   const { fetchImpl, completed } = github({
-    delayRepo: (slug, file) => {
-      if (file !== 'package.json') return 0;
-      if (slug === 'demo/slow') return 80;
-      if (slug === 'demo/middle') return 20;
-      return 0;
+    beforeRespond: async (slug, file) => {
+      if (file !== 'package.json') return;
+      if (slug === 'demo/middle') await fastDone.promise;
+      if (slug === 'demo/slow') await middleDone.promise;
+    },
+    afterRespond: (slug, file) => {
+      if (file !== 'README.md') return;
+      if (slug === 'demo/fast') fastDone.resolve();
+      if (slug === 'demo/middle') middleDone.resolve();
     },
   });
   const io = recorder();

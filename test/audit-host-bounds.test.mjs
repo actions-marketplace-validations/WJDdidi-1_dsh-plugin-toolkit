@@ -57,3 +57,15 @@ test('an inclusive wildcard comparison still spans every stable version, as npm 
     assert.equal(hostCompatibility(range, '10.0.0'), 'compatible', range);
   }
 });
+
+test('a caret or tilde on a wildcard major is any stable version, as npm normalises it', () => {
+  for (const range of ['^*', '^x', '^X', '~*', '~x', '~X', '~>*']) {
+    assert.equal(hostCompatibility(range, '0.0.0'), 'compatible', range);
+    assert.equal(hostCompatibility(range, '1.2.3'), 'compatible', range);
+    assert.equal(hostCompatibility(range, '10.0.0'), 'compatible', range);
+    // npm still excludes a pre-release unless the range names one.
+    assert.equal(hostCompatibility(range, '1.2.3-alpha.1'), 'incompatible', range);
+    // npm's own range parser accepts these spellings, so doctor must too.
+    assert.equal(checkHostRange({ engines: { dsh: range } }), null, range);
+  }
+});

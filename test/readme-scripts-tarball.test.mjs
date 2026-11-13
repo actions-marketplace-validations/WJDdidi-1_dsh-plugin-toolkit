@@ -1,13 +1,15 @@
 /**
  * A command a shipped README tells a reader to run has to exist in the tarball
- * that reader installs. `scripts/preview.mjs` was documented but absent from
- * 0.20.12's `files` list, so `node scripts/preview.mjs` worked in a checkout
- * and failed with `MODULE_NOT_FOUND` in an installed copy.
+ * that reader installs. Two releases shipped documented commands without the
+ * files: `scripts/preview.mjs` was absent from 0.20.12's `files` list, and the
+ * four `examples/*.mjs` commands were absent until 0.20.28.
  *
  * This gate reads the commands from the READMEs npm actually ships instead of
- * a copy in the test, then compares them with `npm pack --dry-run --json`. A
- * future `files` edit that drops a documented script fails here and names the
- * path before publication.
+ * a copy in the test, then compares them with `npm pack --dry-run --json`. It
+ * covers both `scripts/*.mjs` and `examples/*.mjs`; a future `files` edit that
+ * drops a documented path fails here and names the path before publication.
+ * The 0.20.12 file list is replayed as a control, so the gate is shown to fail
+ * on the exact paths that release left out.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -16,28 +18,9 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { run } from '../lib/exec.mjs';
+import { documentedRunCommands, missingRunCommands } from '../lib/readme-commands.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Both READMEs are in the published file list. A command documented only in the
-// Chinese README is still a command an installed reader can try to run.
-const SHIPPED_READMES = ['README.md', 'README.zh.md'];
-const SCRIPT_COMMAND = /\bnode\s+(scripts\/[A-Za-z0-9._/-]+\.mjs)\b/gu;
-
-/** Every distinct `scripts/<name>.mjs` the READMEs tell a reader to pass to node. */
-function documentedScripts() {
-  const found = new Map();
-  for (const readme of SHIPPED_READMES) {
-    const file = path.join(ROOT, readme);
-    if (fs.existsSync(file) === false) continue;
-    // A Windows checkout writes README.md with CRLF; the command is text, so
-    // normalize before matching the line a reader copies.
-    const text = fs.readFileSync(file, 'utf8').replace(/\r\n/gu, '\n');
-    for (const match of text.matchAll(SCRIPT_COMMAND)) {
-      if (found.has(match[1]) === false) found.set(match[1], readme);
-    }
-  }
-  return found;
-}
 
 /** The paths `npm pack` would put in the published tarball. */
 function packedFiles() {
@@ -49,46 +32,79 @@ function packedFiles() {
   return document.files.map((entry) => entry.path);
 }
 
-/** Documented paths that the packed file list does not contain. */
-function missingScripts(documented, shipped) {
-  const files = new Set(shipped);
-  return [...documented.keys()].filter((script) => files.has(script) === false);
+/** The published `files` list, which is the input npm turns into a tarball. */
+function manifestFiles() {
+  return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).files;
 }
 
-test('every script a shipped README tells a reader to run is in the tarball', () => {
-  const documented = documentedScripts();
+test('every script and example a shipped README tells a reader to run is in the tarball', () => {
+  const documented = documentedRunCommands(ROOT);
+  const scripts = [...documented.keys()].filter((command) => command.startsWith('scripts/'));
+  const examples = [...documented.keys()].filter((command) => command.startsWith('examples/'));
+
   assert.ok(
-    documented.size > 0,
-    `neither ${SHIPPED_READMES.join(' nor ')} names a \`node scripts/<name>.mjs\` command; the gate would pass without checking anything`,
+    scripts.length > 0,
+    'no shipped README names a `node scripts/<name>.mjs` command; the gate would pass without checking the scripts',
+  );
+  assert.ok(
+    examples.length > 0,
+    'no shipped README names a `node examples/<name>.mjs` command; the gate would pass without checking the examples',
   );
 
   const packed = packedFiles();
   assert.ok(packed.includes('README.md'), '`npm pack --dry-run --json` no longer lists README.md');
 
-  const missing = missingScripts(documented, packed);
+  const missing = missingRunCommands(documented, packed);
   assert.deepEqual(
     missing,
     [],
-    `\`npm pack --dry-run --json\` omits documented script(s):\n${missing
-      .map((script) => `  ${script} (named in ${documented.get(script)})`)
+    `\`npm pack --dry-run --json\` omits documented command(s):\n${missing
+      .map((command) => `  ${command} (named in ${documented.get(command)})`)
       .join('\n')}\nAdd each path to package.json's "files" list, or stop documenting it as an installed command.`,
   );
 });
 
-test('the gate names the script 0.20.12 left out of its file list', () => {
-  // 0.20.12 listed the benchmark and compatibility scripts but not preview.
-  // Keeping the old file list as a control proves the comparison fails with the
-  // missing path, not merely that today's list happens to be complete.
-  const shippedIn02012 = new Set([
+test('the gate names the paths 0.20.12 left out of its file list', () => {
+  // 0.20.12 listed the benchmark and compatibility scripts but not preview,
+  // and shipped only examples/compatibility-sample/ rather than the four
+  // runnable examples. Replaying that file list proves the comparison fails
+  // with the missing paths, not merely that today's list happens to be complete.
+  const shippedIn02012 = [
+    'bin/',
+    'lib/',
+    'index.js',
+    'client.js',
+    'cordis.patch.yml',
     'README.md',
+    'README.zh.md',
+    'LICENSE',
+    'CHANGELOG.md',
+    'docs/badge.svg',
+    'docs/card.png',
+    'docs/ecosystem-audit-2026-11-03.txt',
     'scripts/benchmark-audit.mjs',
     'scripts/compatibility-sample.mjs',
-  ]);
-  const documented = new Map([
-    ['scripts/benchmark-audit.mjs', 'README.md'],
-    ['scripts/compatibility-sample.mjs', 'README.md'],
-    ['scripts/preview.mjs', 'README.md'],
-  ]);
+    'examples/compatibility-sample/',
+  ];
+  const documented = documentedRunCommands(ROOT);
 
-  assert.deepEqual(missingScripts(documented, shippedIn02012), ['scripts/preview.mjs']);
+  assert.deepEqual(
+    missingRunCommands(documented, shippedIn02012),
+    [
+      'examples/aria.mjs',
+      'examples/baseline.mjs',
+      'examples/mount-a-bundle.mjs',
+      'examples/route-stubs.mjs',
+      'scripts/preview.mjs',
+    ],
+    'the 0.20.12 replay has to name every documented path that release left out',
+  );
+
+  // Replaying the fixed list, not only the packer, keeps the acceptance case
+  // explicit: the current `files` list resolves all documented commands.
+  assert.deepEqual(
+    missingRunCommands(documented, manifestFiles()),
+    [],
+    'the current package.json files list omits a command a shipped README tells a reader to run',
+  );
 });
