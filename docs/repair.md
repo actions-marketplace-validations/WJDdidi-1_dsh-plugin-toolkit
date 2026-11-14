@@ -28,10 +28,10 @@ bytes. A `--host` or `--range` the planner cannot parse is refused before
 GitHub is read, so a typo is named as a typo instead of becoming a network
 error. The command creates parent directories and refuses to
 replace an existing file unless `--force` is passed. A manifest whose range
-already clears the check is a success: the command prints `ok engines.dsh is
-already ...; nothing to apply` and exits `0` without writing a diff or patch
-file. For every other check, clone the repository and run the commands here
-against the checkout.
+already clears the check has nothing to apply: the command prints `ok
+engines.dsh is already ...; nothing to apply`, exits `1`, and writes no diff or
+patch file. Exit `0` means a repair was printed. For every other check, clone
+the repository and run the commands here against the checkout.
 
 To triage a list of repositories before cloning any of them, pass `--host` to
 the remote audit. It compares each declared `engines.dsh` with the DSH version

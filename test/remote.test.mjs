@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import { parseTarget, auditRemote } from '../lib/remote.mjs';
@@ -49,6 +52,23 @@ test('parseTarget accepts owner/repo, a URL, and a .git URL', () => {
   assert.equal(parseTarget('https://github.com/a/b/').slug, 'a/b');
   assert.throws(() => parseTarget('only-one-part'), /is a name, not owner\/repo/);
   assert.throws(() => parseTarget('.'), /is a folder on this machine/);
+});
+
+test('an owner/repo that names a local folder is still a remote target', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-remote-target-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'demo', 'plugin'), { recursive: true });
+
+  const previous = process.cwd();
+  try {
+    process.chdir(root);
+    // `classifyTarget` would call this a local folder because it exists. The
+    // --remote commands were told it is a repository, so the slug has to win.
+    assert.deepEqual(parseTarget('demo/plugin'), { owner: 'demo', repo: 'plugin', slug: 'demo/plugin' });
+    assert.throws(() => parseTarget('.'), /is a folder on this machine/);
+  } finally {
+    process.chdir(previous);
+  }
 });
 
 test('a repository that would load passes every remote check', async () => {

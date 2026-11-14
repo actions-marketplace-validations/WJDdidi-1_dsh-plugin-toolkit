@@ -600,6 +600,8 @@ For a CI job or a repair sweep, add `--json`:
 ```sh
 $ dsh-plugin audit --remote --from repos.txt --json
 ```
+
+```json
 [
   {
     "target": "V1ki/dsh-plugin-subscriptions",
@@ -746,6 +748,22 @@ and a range that already passes is not touched. `--range <range>` chooses the
 value used when `engines.dsh` needs repair, and `--dry-run` wins if it is passed
 alongside `--write`.
 
+When the failed install names the host version, `--host` aims that repair at
+the DSH that rejected it instead of falling back to the default. It is the same
+decision as `fix --engines --host`, so the preview shows the range and why the
+next major is excluded, and `--write` applies exactly that edit:
+
+```sh
+$ npx dsh-plugin-toolkit@latest doctor --fix ./my-panel --host 0.3.0
+dsh-plugin doctor --fix: 1 failed check(s) in /Users/you/my-panel
+  ✗ engines.dsh: package.json — would write engines.dsh ">=0.3.0 <1.0.0" (was missing)
+    host 0.3.0 is inside ">=0.3.0 <1.0.0"; 1.0.0 is excluded, so the range includes the host you run and stops before the next major
+nothing written; pass --write to apply
+```
+
+An incomplete version such as `--host 0.3` is refused before the manifest is
+read, and `--range` still wins when both flags are passed.
+
 Checks that cannot be repaired without guessing — a missing patch file, a root
 export that points at the CLI, a README with no Requirements section — still
 appear in the plan with `manual:`, so the command never invents file contents.
@@ -838,8 +856,8 @@ dsh-plugin fix: would write engines.dsh ">=0.2.0" (was missing) in PrismLean/dsh
 
 When `package.json` already declares a range that clears the check, there is
 nothing to apply: the command prints `ok engines.dsh is already "<range>";
-nothing to apply` and exits `0`, the same no-op as `fix --engines` on a
-checkout. No diff and no patch file is written.
+nothing to apply`, exits `1`, and writes no diff or patch file. Exit `0` means a
+repair was printed for the author; `1` means there was no repair to print.
 
 To apply it, clone the repository, save that diff with `--patch`, and apply it
 in the checkout:
@@ -1073,8 +1091,8 @@ merged
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Done, or nothing to complain about — including `fix --remote` when `engines.dsh` is already a valid range |
-| 1 | A check failed, an installed plugin was not loaded by the running app, or the release stopped (the failing stage is named) |
+| 0 | Done, or nothing to complain about |
+| 1 | A check failed, a remote `fix` found nothing to apply, an installed plugin was not loaded by the running app, or the release stopped (the failing stage is named) |
 | 2 | Unknown command, invalid usage, or a remote request that could not be completed |
 
 A flag that takes a value must be given one. When `--range`, `--log`,
@@ -1085,9 +1103,9 @@ is the last token, or is followed by another flag, the command exits `2` and
 names the flag instead of falling back to a default or consuming the next
 option as the value.
 
-`fix <owner>/<repo> --remote` exits `0` both when it prints a diff for a missing
-`engines.dsh` and when the manifest already declares a range that clears the
-check; the second case prints `ok ... nothing to apply` and writes no diff.
+`fix <owner>/<repo> --remote` exits `0` when it prints a diff for a missing
+`engines.dsh`; when the manifest already declares a range that clears the check,
+the second case prints `ok ... nothing to apply`, writes no diff and exits `1`.
 
 ## What is not here yet
 

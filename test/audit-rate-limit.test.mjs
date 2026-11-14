@@ -118,6 +118,24 @@ test('the JSON findings carry rateLimited and the reset time, and never unreadab
   }
 });
 
+test('a rate-limited batch reports URL entries with the same owner/repo target as the rows it read', async (t) => {
+  const list = listFile(t, 'https://github.com/demo/one\nhttps://github.com/demo/two\n');
+  const { fetchImpl } = failingFetch(1, 1_780_000_000);
+  const io = recorder();
+
+  const code = await run(['audit', '--remote', '--from', list, '--jobs', '1', '--json'], io, { fetchImpl });
+
+  assert.equal(code, 1);
+  const reports = JSON.parse(io.lines.join('\n'));
+  // The first repository was read (and hit the limit); the second was skipped.
+  // Both findings must name the repository the same way a successful read does,
+  // so a consumer can join the list without rewriting GitHub URLs.
+  assert.deepEqual(reports.map((report) => report.target), ['demo/one', 'demo/two']);
+  assert.equal(reports[0].rateLimited, true);
+  assert.equal(reports[1].rateLimited, true);
+  assert.match(reports[1].notes[0], /before this repository was read/u);
+});
+
 test('429 is treated as a rate limit too, and retry-after supplies the reset time', async () => {
   const io = recorder();
   const calls = [];

@@ -129,6 +129,51 @@ test('checks with no automatic edit stay in the plan and are reported after the 
   assert.equal(doctor(dir).failures.some((failure) => failure.check === 'readme'), true);
 });
 
+test('--host aims the engines repair at the DSH that rejected the install', async () => {
+  const dir = plugin({ node: '>=18' });
+  fs.writeFileSync(
+    path.join(dir, 'README.md'),
+    '# repair-me\n\n## Requirements\n\n- DeepSeek Harness >=0.3.0 <1.0.0\n',
+  );
+  const preview = recorder();
+
+  assert.equal(await run(['doctor', dir, '--fix', '--host', '0.3.0'], preview), 1);
+  const output = preview.lines.join('\n');
+  assert.match(output, /would write engines\.dsh ">=0\.3\.0 <1\.0\.0"/u);
+  assert.match(output, /host 0\.3\.0 is inside ">=0\.3\.0 <1\.0\.0"/u);
+  assert.deepEqual(manifestOf(dir).engines, { node: '>=18' }, 'naming a host must not write by itself');
+
+  const written = recorder();
+  assert.equal(await run(['doctor', dir, '--fix', '--host', '0.3.0', '--write'], written), 0);
+  assert.match(written.lines.join('\n'), /wrote engines\.dsh ">=0\.3\.0 <1\.0\.0"/u);
+  assert.equal(manifestOf(dir).engines.dsh, '>=0.3.0 <1.0.0');
+  assert.equal(doctor(dir).failures.length, 0);
+});
+
+test('--host with an incomplete version stops before reading or writing the manifest', async () => {
+  const dir = plugin({ node: '>=18' });
+  const before = rawOf(dir);
+  const io = recorder();
+
+  assert.equal(await run(['doctor', dir, '--fix', '--host', '0.3'], io), 1);
+  assert.match(io.lines.join('\n'), /"0\.3" is not a semver host version/u);
+  assert.equal(rawOf(dir), before);
+});
+
+test('a package.json that is not a JSON object is named instead of crashing', async () => {
+  const dir = path.join(scratch(), 'plugin');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'package.json'), 'null\n');
+  const io = recorder();
+
+  assert.equal(await run(['doctor', dir, '--fix'], io), 1);
+  const output = io.lines.join('\n');
+  assert.match(output, /package\.json does not hold a JSON object/u);
+  assert.doesNotMatch(output, /Cannot read properties of null/u);
+  assert.equal(rawOf(dir), 'null\n');
+  assert.throws(() => doctor(dir), /does not hold a JSON object/u);
+});
+
 test('doctor --fix refuses a directory with no package.json instead of creating one', async () => {
   const dir = path.join(scratch(), 'empty');
   fs.mkdirSync(dir, { recursive: true });

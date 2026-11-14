@@ -1,5 +1,42 @@
 ## 0.20.33
 
+- **`audit --remote` names every finding the same way and never reads a
+  failed request as clean.** A batch given GitHub URLs reported the rows it had
+  read as `owner/repo` but kept the URL for rows skipped after a rate limit, so
+  a consumer joining findings saw two shapes for one list. Every target is now
+  normalised through the same parser. A read that fails for a reason other than
+  the quota (an HTTP 500 or a network error) is reported as `unreadable` with
+  the reason in `notes` and still exits `1`, so an empty `failures` array is
+  never mistaken for a pass. A local folder that happens to be named
+  `owner/repo` no longer hides the remote target. `test/audit-batch.test.mjs`,
+  `test/audit-rate-limit.test.mjs` and `test/remote.test.mjs` cover the
+  unreadable row, URL normalisation and the folder-name collision, and the
+  README's `--json` example is fenced as JSON so it renders as a code block.
+- **`fix <owner>/<repo> --remote` exits `1` when there is nothing to apply.**
+  The command is a repair planner, so exit `0` now means it printed a unified
+  diff the author can apply. A manifest that already declares a valid
+  `engines.dsh` still prints `ok engines.dsh is already "<range>"; nothing to
+  apply` and writes no diff or patch file, but the plan is empty and the exit
+  code says so. This makes the remote repair usable in a shell loop that has to
+  tell a printed repair from an already-clean repository. The process-boundary
+  test now asserts both outcomes, and the README and `docs/repair.md` describe
+  the same contract.
+- **`doctor --fix --host` aims the repaired `engines.dsh` at the DSH that
+  rejected the install.** The repair planner already accepted a host, but the
+  CLI never passed `--host` through, so `doctor --fix ./my-panel --host 0.3.0`
+  silently wrote the default `>=0.2.0` — the same range `fix --engines --host`
+  would have replaced. The flag now reaches the planner, the preview prints why
+  the next major is excluded, and `--write` applies exactly that range.
+  `test/doctor-fix.test.mjs` covers the host-aimed preview, the write and an
+  incomplete host version that must stop before reading the manifest.
+- **A `package.json` that is not a JSON object is named instead of crashing.**
+  A file holding `null`, a string or an array parses as JSON, but every check
+  then read a field off the wrong shape: plain `doctor` died with
+  `Cannot read properties of null` and `doctor --fix` repeated that message.
+  The shared manifest reader now rejects the shape once with
+  `package.json does not hold a JSON object`, so the fixer reports the file the
+  same way it reports a parse error. The installed-plugin audit uses the same
+  reader and gets the cleaner message without a second code path.
 - **`fix --remote --patch` keeps a CRLF manifest's line endings in the diff.**
   The diff splitter normalized `\r\n` to `\n`, so a `package.json` saved on
   Windows produced hunks whose context and removed lines lacked the carriage

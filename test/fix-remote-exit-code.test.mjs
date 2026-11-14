@@ -1,7 +1,8 @@
 /**
  * `fix <owner>/<repo> --remote` has to keep the documented exit-code contract
- * at the process boundary, not only in the `run()` helper: an already-correct
- * manifest and one that needs the engines.dsh edit are both successful plans.
+ * at the process boundary, not only in the `run()` helper: a missing range
+ * prints a repair and exits 0, while a manifest that already declares a valid
+ * range prints nothing to apply and exits 1.
  *
  * The child process gets a `--require` shim that replaces global fetch with a
  * package.json served from an environment variable, so the real bin runs and
@@ -77,10 +78,10 @@ test('the CLI exits 0 for a remote manifest that is missing engines.dsh', (t) =>
   assert.equal(result.stderr, '');
 });
 
-test('the CLI exits 0 for a remote manifest that already declares engines.dsh', (t) => {
+test('the CLI exits 1 for a remote manifest that already declares engines.dsh', (t) => {
   const result = runFix(t, { dsh: '>=0.2.0' });
 
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 1, result.stderr);
   assert.match(result.stdout, /ok {2}engines\.dsh is already ">=0\.2\.0"; nothing to apply/u);
   assert.doesNotMatch(result.stdout, /^--- a\//mu);
   assert.doesNotMatch(result.stdout, /^@@/mu);

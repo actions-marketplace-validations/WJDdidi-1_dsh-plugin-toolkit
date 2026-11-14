@@ -68,6 +68,7 @@ function github(repositories) {
     const [, owner, repo, file] = match;
     const entry = repositories[`${owner}/${repo}`];
     if (entry === 'rate-limit') return { ok: false, status: 403, json: async () => ({ message: 'rate limit' }) };
+    if (entry === 'unreadable') return { ok: false, status: 500, json: async () => ({ message: 'server error' }) };
     if (entry === undefined || Object.prototype.hasOwnProperty.call(entry, file) === false) {
       return { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) };
     }
@@ -210,6 +211,30 @@ test('audit --remote --from reports a rate-limited repository as rate-limited, n
   assert.doesNotMatch(output, /^\s*clean\s+demo\/blocked/mu);
   assert.doesNotMatch(output, /^\s*unreadable\s+demo\/blocked/mu);
   assert.match(output, /0 clean, 0 failing \(0 problems\), 0 unreadable, 1 rate-limited/u);
+});
+
+test('audit --remote --from reports an unreadable repository as a note, never a clean pass', async (t) => {
+  const list = listFile('demo/clean\ndemo/unreadable\n');
+  t.after(list.cleanup);
+  const fetchImpl = github({ 'demo/clean': cleanFiles, 'demo/unreadable': 'unreadable' });
+
+  const text = recorder();
+  const textCode = await run(['audit', '--remote', '--from', list.file], text, { fetchImpl });
+  assert.equal(textCode, 1);
+  const output = text.lines.join('\n');
+  assert.match(output, /unreadable\s+demo\/unreadable\s+— GitHub answered 500 for package\.json/u);
+  assert.doesNotMatch(output, /^clean\s+demo\/unreadable/mu);
+  assert.match(output, /1 clean, 0 failing \(0 problems\), 1 unreadable/u);
+
+  const json = recorder();
+  const jsonCode = await run(['audit', '--remote', '--from', list.file, '--json'], json, { fetchImpl });
+  assert.equal(jsonCode, 1);
+  const reports = JSON.parse(json.lines.join('\n'));
+  const unreadable = reports.find((report) => report.target === 'demo/unreadable');
+  assert.equal(unreadable.unreadable, true);
+  assert.equal(unreadable.rateLimited, undefined);
+  assert.deepEqual(unreadable.failures, []);
+  assert.match(unreadable.notes[0], /GitHub answered 500/u);
 });
 
 test('audit --remote --from --json prints the existing finding array', async (t) => {
