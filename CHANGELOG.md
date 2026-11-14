@@ -1,3 +1,96 @@
+## 0.20.33
+
+- **`fix --remote --patch` keeps a CRLF manifest's line endings in the diff.**
+  The diff splitter normalized `\r\n` to `\n`, so a `package.json` saved on
+  Windows produced hunks whose context and removed lines lacked the carriage
+  return. The saved patch then failed `git apply --check` against the very
+  checkout it described, dead-ending the documented batch repair. The splitter
+  now keeps the `\r` as part of each line, so the patch body is CRLF when the
+  manifest is and LF when it is not; the same shared diff also fixes
+  `audit --remote --patch-dir` repairs. A hunk that reaches a manifest without
+  a final newline now carries the standard `\ No newline at end of file`
+  marker, so `git apply --check` accepts those bytes too.
+  `test/fix-remote-crlf.test.mjs` runs the CLI for both line-ending styles and
+  checks each patch with `git apply --check`.
+
+## 0.20.32
+
+- **Every value-taking flag rejects a missing value instead of falling back to
+  a default or swallowing the next option.** `--range`, `--log`, `--tag-prefix`,
+  `--base`, `--market`, `--timeout`, `--debounce`, `--slot`, `--surface`,
+  `--dest`, `--entry`, `--build`, `--title` and `--name` share the guard
+  `--index`, `--host` and `--home` already had. Before this, `fix --engines
+  --range --write` stored `--write` as the range and failed later with a semver
+  error, while `release --dry-run --tag-prefix` silently planned the default
+  `plugin-v` prefix. Each now exits `2`, names the flag, and stops before
+  reading a file or planning a release. A valid value still reaches the
+  command, and `test/value-flag-contract.test.mjs` pins the whole family at the
+  process boundary.
+
+## 0.20.31
+
+- **`index --index` with no path is a usage error, not a silent default.** A
+  bare `--index` used to store `undefined`, so the command read
+  `./market/index.json` and could exit `0` on an index the caller never named;
+  a CI step could therefore go green against the wrong file. The flag parser
+  now records the missing value separately, and the CLI exits `2` with
+  `--index` named before any index is read. A named path, whether
+  `--index market/index.json` or the positional form, still audits that file.
+
+- **`verify` also awaits an async client `apply()` on its boot probe.** The
+  host half was made safe first; the mounted path then handed the client face a
+  bare context without waiting for the returned promise. A client `async
+  apply()` that rejected on that context escaped the probe, so the process died
+  with an unhandled rejection and a stack trace instead of naming the failure.
+  The probe now awaits the same way as the host, so the rejection is a `boot`
+  failure naming the error. An async client fixture pins the process boundary,
+  and a non-`Error` rejection now reports its value instead of `undefined` or a
+  second TypeError from reading `.message`.
+
+## 0.20.30
+
+- **The compatibility sample is the shipped CLI's output, not a library
+  shortcut.** `scripts/compatibility-sample.mjs` used to call `run()` in
+  process; it now starts `bin/dsh-plugin.mjs` as a child with a preload that
+  answers GitHub from the checked-in `examples/compatibility-sample/` folder.
+  The README's `incompatible` block is therefore the executable's stdout, and
+  the script fails unless that process exits `1`, so the documented command's
+  flag parsing, output formatter and exit-code path are covered by the same
+  reproducible sample. The test still compares the script's output with the
+  README and fails if the section names a flag the CLI does not document.
+
+- **`verify --no-mount` awaits an async host `apply()`, so a rejection is a
+  `host apply` failure instead of a printed success followed by a crash.** The
+  installed host half was called without `await`; an `async apply()` that threw
+  returned a rejected promise, verify printed `ok  packed ... imported its host
+  half`, and Node then killed the process with an unhandled rejection and a
+  `Node.js v...` trace. The call is now awaited inside the same try/catch as the
+  synchronous throw, so both report the error message and exit `1` with no
+  success line. Checked-in async and sync fixtures pin the process boundary, and
+  the module-level test names the `host apply` check.
+
+- **`fix --remote --host` rejects a bad version before it reads GitHub.** The
+  remote planner used to fetch `package.json` first and only then parse
+  `--host`, so `--host 0.3` against an unreachable GitHub reported "cannot
+  reach GitHub" instead of the typo, and a reachable run spent the
+  unauthenticated API request before exiting `2`. The range/host validation now
+  runs before the one GitHub request, from the same helper the local planner
+  and the post-read remote plan use, so both report the same message. An
+  explicit `--range` that is not a semver range gets the same early rejection.
+  Tests pin the sequential values, the invalid range, the leading-`v` control
+  that still plans `>=0.3.0 <1.0.0`, and the shipped CLI boundary where no
+  request may happen.
+
+- **`audit --remote --host` rejects a value that is not a complete DSH
+  version.** A typo such as `--host banana`, a range such as `>=0.2.0`, or a
+  partial version such as `0.2` used to reach the compatibility parser, which
+  answered `unknown` for every repository; an otherwise clean batch then exited
+  `0` even though the host question was never answered. The CLI now exits `2`
+  with the value named before it reads a `--from` file or contacts GitHub, while
+  `v0.2.2` remains a valid version and still reaches the compatibility answer.
+  Tests pin the sequential value, the batch-before-file case, the process
+  boundary, and the leading-`v` control.
+
 ## 0.20.29
 
 - **The tarball gate covers `examples/*.mjs` as well as `scripts/*.mjs`.** The

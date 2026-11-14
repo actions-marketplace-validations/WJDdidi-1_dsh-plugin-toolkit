@@ -196,6 +196,28 @@ test('the shipped CLI fails the no-"." tarball at the process boundary and passe
   assert.match(controlOutput, /^ok {2}packed \d+ file\(s\), installed the tarball and imported its host half$/m, controlOutput);
 });
 
+test('verify --no-mount reports a rejecting async host apply instead of succeeding then crashing', () => {
+  // The shipped CLI must fail *cleanly* here. Before the fix, `apply()` was
+  // called without awaiting it, so this fixture printed the success line and
+  // only afterwards died with an unhandled rejection. Pin all four things a
+  // user or CI job sees at the process boundary: a non-zero exit, the stage
+  // named, the plugin's own rejection message, and no success line or Node
+  // crash trace in either stream.
+  const result = spawnSync(process.execPath, [BIN, 'verify', fixture('verify-host-apply-async'), '--no-mount'], {
+    encoding: 'utf8',
+  });
+  const output = `${result.stdout}\n${result.stderr}`;
+
+  assert.equal(result.status, 1, output);
+  assert.match(output, /dsh-plugin verify: stopped at install/, output);
+  const line = output.split('\n').find((entry) => entry.includes('host apply:'));
+  assert.ok(line, output);
+  assert.match(line, /async apply exploded/, line);
+  assert.doesNotMatch(output, /^ok {2}packed/m, output);
+  assert.doesNotMatch(output, /imported its host half/, output);
+  assert.doesNotMatch(output, /^Node\.js v/m, output);
+});
+
 test('a manifest that doctor rejects stops before npm is asked anything', async () => {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-verify-')), 'plugin');
   init({ dir, name: 'broken' });

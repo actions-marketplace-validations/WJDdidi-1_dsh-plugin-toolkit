@@ -464,7 +464,7 @@ verdict, and the remaining entries are reported without another request.
 
 ### Will this plugin install on my DSH?
 
-The eight compatibility reports, from four repositories, all end with the same
+The fifteen compatibility reports, from four repositories, all end with the same
 question. Add `--host <version>` to a remote audit and it answers that question
 for one repository. This is the output for `L3n3L/dsh-resume`, a real plugin
 whose declared range stops before DSH 0.2.0, checked against the
@@ -490,9 +490,12 @@ real CLI path:
 $ node scripts/compatibility-sample.mjs
 ```
 
-(`npm run compatibility` runs the same script.) The test suite runs that
-command and compares its output with the block above, so the sample cannot
-drift from the formatter or from the README. Running
+(`npm run compatibility` runs the same script.) The script starts the shipped
+`bin/dsh-plugin.mjs` as a child process and answers its GitHub reads from the
+checked-in folder, so the block above is that executable's stdout rather than a
+library shortcut; it exits `0` only after the replayed command exited `1`. The
+test suite runs the script and compares its output with the block above, so the
+sample cannot drift from the flag parser, the formatter, or the README. Running
 `dsh-plugin audit --remote L3n3L/dsh-resume --host 0.2.2-alpha.3` without the
 sample audits the repository's current default branch instead; a README or
 manifest change since 0.1.3 can add another `readme` or manifest failure to the
@@ -520,7 +523,10 @@ host-targeted repair for each repository that needs one. The help text lists
 the same flags; a test fails if this section names a flag the CLI does not have.
 A bare `--host` is a usage error, not an audit without the comparison: the
 command exits `2` before it reads GitHub, and `--host --json` does not consume
-the `--json` flag as a version.
+the `--json` flag as a version. The value itself must be a complete version
+(`0.2.2`, `v0.2.2`, or `0.2.2-alpha.3`): a range (`>=0.2.0`), a partial version
+(`0.2`), or a tag name is rejected with exit `2` before any repository is read,
+so a typo cannot turn into a clean-looking `unknown` row.
 
 `--host` still names the running app URL for a local `audit`; on `--remote` it
 is the DSH version to compare against. With `--json`, each finding gains
@@ -853,7 +859,10 @@ is still untouched. The same host-aware plan works with `--patch`:
 `>=0.3.0 <1.0.0` and prints why. After cloning, `fix . --engines --host 0.3.0
 --write` applies that same range; either path writes one that accepts the host
 and rejects the next major. The remote reader strips a UTF-8 BOM, so a manifest
-saved on Windows gives the same plan and the patch removes the BOM too. `audit --remote --host <version> --patch-dir <dir>`
+saved on Windows gives the same plan and the patch removes the BOM too. A
+`--host` or `--range` the planner cannot parse is refused before the GitHub
+read, so a typo names the flag instead of looking like a network failure or
+spending the unauthenticated request quota. `audit --remote --host <version> --patch-dir <dir>`
 writes host-targeted repairs for a whole list. `git apply --check` is the dry
 run: it fails before changing anything if the manifest moved since the diff was
 printed. Commit the applied change as you would any other edit.
@@ -939,7 +948,7 @@ ok  packed 5 file(s), installed the tarball, mounted the panel
     My panel This panel came from dsh-plugin init. Clicks: 0
 ```
 
-It packs, installs that tarball into a throwaway directory, then mounts the bundle **from the installed copy**. The host half is imported by the package's bare name, exactly as the loader imports it, so an `exports` map with no `.` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file; `verify --no-mount` reports that as a `root export` failure naming the missing `.` export. A package that declares neither `exports` nor `main` has no root module at all; there is nothing to import, and the success line says it skipped the host import instead of claiming one ran. When the `files` list drops the panel:
+It packs, installs that tarball into a throwaway directory, then mounts the bundle **from the installed copy**. The host half is imported by the package's bare name, exactly as the loader imports it, so an `exports` map with no `.` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file; `verify --no-mount` reports that as a `root export` failure naming the missing `.` export. The host half is also called and awaited, so an `async apply()` that rejects is reported as a `host apply` failure instead of printing the success line and then crashing with an unhandled rejection; the client half's boot probe is awaited the same way, so an async `apply()` that rejects on the bare context is a `boot` failure. A package that declares neither `exports` nor `main` has no root module at all; there is nothing to import, and the success line says it skipped the host import instead of claiming one ran. When the `files` list drops the panel:
 
 ```sh
 $ npx dsh-plugin-toolkit verify .
@@ -1067,6 +1076,14 @@ merged
 | 0 | Done, or nothing to complain about — including `fix --remote` when `engines.dsh` is already a valid range |
 | 1 | A check failed, an installed plugin was not loaded by the running app, or the release stopped (the failing stage is named) |
 | 2 | Unknown command, invalid usage, or a remote request that could not be completed |
+
+A flag that takes a value must be given one. When `--range`, `--log`,
+`--tag-prefix`, `--base`, `--market`, `--timeout`, `--debounce`, `--slot`,
+`--surface`, `--dest`, `--entry`, `--build`, `--title`, `--name`, `--index`,
+`--host`, `--home`, `--budget`, `--patch`, `--from`, `--jobs` or `--patch-dir`
+is the last token, or is followed by another flag, the command exits `2` and
+names the flag instead of falling back to a default or consuming the next
+option as the value.
 
 `fix <owner>/<repo> --remote` exits `0` both when it prints a diff for a missing
 `engines.dsh` and when the manifest already declares a range that clears the

@@ -1,0 +1,31 @@
+{
+  "name": "verify-client-apply-async",
+  "version": "1.0.0",
+  "description": "fixture: the installed client half exports an async apply() that rejects on the bare boot context",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}

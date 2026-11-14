@@ -2,7 +2,8 @@
  * The compatibility reports end with one question, and the README has to answer
  * it with output a reader can check. That means three things stay tied
  * together: the documented command, the flags it uses, and the sample under
- * `examples/compatibility-sample/` that reproduces the quoted line.
+ * `examples/compatibility-sample/` that reproduces the quoted line by running
+ * the shipped CLI process against that folder.
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -81,6 +82,15 @@ test('every compatibility flag named in the README is a real CLI flag', () => {
     assert.ok(documented.has(flag), `the compatibility section no longer documents ${flag}`);
     assert.ok(help.has(flag), `--help no longer lists ${flag}`);
   }
+});
+
+test('the sample launches the shipped CLI process instead of importing run()', () => {
+  // The README says the quoted block is the executable's stdout. Calling the
+  // exported `run()` would skip `bin/dsh-plugin.mjs`, so a regression there
+  // would leave the sample green while the command a reader copies is broken.
+  const source = fs.readFileSync(path.join(ROOT, 'scripts', 'compatibility-sample.mjs'), 'utf8');
+  assert.match(source, /spawnSync\(/u, 'the sample no longer starts a child process');
+  assert.match(source, /bin[\\/]dsh-plugin\.mjs|['"]bin['"],\s*['"]dsh-plugin\.mjs['"]/u, 'the sample does not launch bin/dsh-plugin.mjs');
 });
 
 test('the reproducible sample ships with the command it documents', () => {

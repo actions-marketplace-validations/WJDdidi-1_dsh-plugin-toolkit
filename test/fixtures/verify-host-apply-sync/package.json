@@ -1,0 +1,25 @@
+{
+  "name": "verify-host-apply-sync",
+  "version": "1.0.0",
+  "description": "control fixture: the installed host half exports a synchronous apply() that throws",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  }
+}

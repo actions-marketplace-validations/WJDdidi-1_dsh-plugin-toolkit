@@ -1,0 +1,4 @@
+- insert:
+    - id: 'verify-client-apply-async'
+      name: 'verify-client-apply-async'
+      config: {}
