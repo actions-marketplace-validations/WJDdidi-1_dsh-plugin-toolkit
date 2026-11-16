@@ -8,10 +8,37 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { requireFrom } from '../lib/testkit/env.mjs';
 import { createHost, createFetch, mountClient } from '../lib/testkit/index.mjs';
 
-const ROOT = path.resolve(import.meta.dirname, '..');
+// `import.meta.dirname` is Node 20.11+, and this package supports Node 18.
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = process.argv[2] ?? '/tmp/kit-preview.html';
+
+// Mounting needs the optional testkit peers. Look in the package first (an
+// installed preview should use the peers installed next to it), then in the
+// caller's project (the way testkit itself resolves a plugin's dependencies).
+// Those are the two places a real install puts them; do not walk arbitrary
+// ancestors. Name the install command instead of letting a missing package
+// surface as a stack trace from the first mount.
+const PEERS = ['jsdom', 'react', 'react-dom/client'];
+let peerRoot = null;
+for (const anchor of [ROOT, process.cwd()]) {
+  try {
+    for (const name of PEERS) requireFrom(name, anchor);
+    peerRoot = anchor;
+    break;
+  } catch {
+    // Try the next place the peers could legitimately live.
+  }
+}
+if (peerRoot === null) {
+  console.error('preview: the testkit needs the optional peers jsdom, react and react-dom to mount the panel.');
+  console.error('preview: install them in the project you run this from: npm install --save-dev jsdom react react-dom');
+  process.exit(1);
+}
 
 const result = {
   ok: false,
@@ -59,6 +86,9 @@ let firstPanel = null; // the injected stylesheet, read while the first panel is
 for (const state of states) {
   const panel = await mountClient({
     file: path.join(ROOT, 'client.js'),
+    // Use the same React and jsdom the peer check found: the package's own
+    // install root when it has them, the caller's project otherwise.
+    resolveFrom: peerRoot,
     slot: state.slot,
     host: createHost({ locale: { en: {}, zh: {} } }),
     fetch: createFetch({ '/toolkit/check': { body: state.route === 'search' ? CANDIDATES : state.route === 'repo' ? REPO_RESULT : result } }),

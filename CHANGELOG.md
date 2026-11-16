@@ -1,3 +1,67 @@
+## 0.20.38
+
+- **`doctor` accepts SemVer 2.0 build metadata in `version`, and rejects
+  malformed pre-release and build identifiers.** The hand-written check only
+  allowed an optional pre-release and no `+build`, so valid package versions
+  (`1.0.0+build.5`, `2.3.4+sha.abc`, `0.1.0+20261103`) failed as `not semver`
+  and `release --dry-run` stopped at preflight even though npm accepts them.
+  The same loose pre-release pattern let `1.0.0-..` and `1.0.0-.` through. The
+  check now follows SemVer 2.0's core, pre-release and build grammar, so empty
+  identifiers and leading zeros in numeric identifiers fail. The acceptance
+  covers `checkVersion`, `doctor` at the process boundary, the
+  `release --dry-run` plan and the invalid forms in
+  `test/doctor-version-semver.test.mjs`; `docs/repair.md` states the same rule.
+
+- **The build-metadata acceptance is checked against npm itself.** The CLI
+  regression test now runs `doctor`, `release --dry-run` and
+  `npm pack --dry-run` on the same three fixtures and requires
+  `doctor_ok=3 release_ok=3 pack_ok=3`, so a future version check cannot drift
+  away from what npm will actually pack even if the two toolkit paths still
+  agree with each other.
+
+## 0.20.37
+
+- **The README tarball gate reads every relative `node <path>` command, not
+  only the `scripts/` and `examples/` folders in use today.** A future
+  `node ./bin/...`, quoted path, nested folder or `.js`/`.cjs` command is the
+  same promise to an installed reader, and previously stepped outside the
+  gate. The comparison also judges `package.json`'s `files` list with npm's
+  folder, glob and negation semantics instead of exact strings, so a valid
+  glob is not reported as a missing command and a trailing `!` entry that
+  removes a documented path is not ignored. `test/readme-commands.test.mjs`
+  pins the extractor and the files semantics; the 0.20.12 replay still names
+  the five paths that release left out.
+
+- **The installed preview command runs on Node 18, resolves its peers from the
+  package, and the tarball gate now executes it instead of only comparing its
+  bytes.** `scripts/preview.mjs` located the package with
+  `import.meta.dirname`, which Node added in 20.11; on Node 18 — the oldest
+  version `engines.node` promises — the README's
+  `node scripts/preview.mjs /tmp/panel.html` threw before it rendered anything.
+  It now uses `path.dirname(fileURLToPath(import.meta.url))`, the idiom the
+  other shipped scripts already use, and resolves jsdom/React from the package
+  first and the caller's project second, so the installed command finds the
+  peers where they were installed without borrowing an unrelated checkout's
+  `node_modules` by accident.
+  `test/preview-tarball.test.mjs` installs the packed tarball into a temp
+  prefix, requires every `node <path>` command in the shipped READMEs to exist
+  there byte for byte, then runs the installed preview from outside the prefix
+  with the optional peers linked and requires exit `0` plus a real HTML page. A
+  missing-peer run exits `1` with the install command instead of a stack trace,
+  and `test/node18-paths.test.mjs` keeps `import.meta.dirname` and
+  `import.meta.filename` out of every shipped source file. The README states
+  the optional peers the preview needs.
+
+- **The four `node examples/*.mjs` commands run from the installed package, not
+  just from a checkout.** The examples mounted `fixtures/...` relative to the
+  caller's cwd and `files` omitted those fixtures, so the installed example
+  files existed but every command failed with `ENOENT` for the bundle they
+  mount. The examples now resolve their bundle and baseline from the package
+  root, the two fixture bundles are in `files`, and
+  `test/readme-examples-tarball.test.mjs` installs the tarball and runs all
+  four from outside the install with the optional peers linked, requiring the
+  output the README shows.
+
 ## 0.20.36
 
 - **`audit --remote` no longer reads an arbitrary `build` script as a pre-pack

@@ -139,7 +139,8 @@ tag is created, which is cheaper than discovering it after the tag is public.
 ```
 
 The quoted value in the second line is whatever is in `package.json` — `1.2`,
-`0.2`, `latest`, and a leading `v` all fail.
+`0.2`, `latest`, and a leading `v` all fail. So do empty pre-release or build
+identifiers, such as `1.0.0-..` and `1.0.0+build..1`.
 
 **Smallest fix.** Write a normal semver value in `package.json`:
 
@@ -149,9 +150,11 @@ The quoted value in the second line is whatever is in `package.json` — `1.2`,
 }
 ```
 
-A prerelease is allowed (`1.2.3-rc.1`). Do not use a leading `v`, a range, or a
-`+build` suffix. If the package is already published at that version, bump the
-patch number instead — the release tag has to be new too.
+A prerelease is allowed (`1.2.3-rc.1`), and so is SemVer 2.0 build metadata
+(`1.2.3+build.5`, `1.2.3-rc.1+sha.abc`), which npm accepts and which does not
+change version precedence. Do not use a leading `v` or a range. If the package
+is already published at that version, bump the patch number instead — the
+release tag has to be new too.
 
 ## engines.dsh
 

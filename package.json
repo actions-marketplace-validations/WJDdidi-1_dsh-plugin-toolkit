@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-toolkit",
-  "version": "0.20.36",
+  "version": "0.20.38",
   "description": "Preflight, release and test DeepSeek Harness plugins: check a folder or any GitHub repository, wait for npm to actually serve the version, and keep the market index honest.",
   "type": "module",
   "bin": {
@@ -31,6 +31,8 @@
     "examples/compatibility-sample/",
     "examples/mount-a-bundle.mjs",
     "examples/route-stubs.mjs",
+    "fixtures/client-bundle/",
+    "fixtures/fetching-bundle/",
     "scripts/benchmark-audit.mjs",
     "scripts/compatibility-sample.mjs",
     "scripts/preview.mjs"

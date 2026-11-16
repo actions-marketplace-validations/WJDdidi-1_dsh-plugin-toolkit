@@ -5,8 +5,10 @@
  *
  * The tarball is the unit here: the commands are read from the READMEs npm
  * actually ships, then the packed tarball is installed into a temp prefix. The
- * installed copies must be byte-identical to the repository files, so a future
- * `files` edit that drops one fails here and names the path before publication.
+ * installed copies must be byte-identical to the repository files, and each
+ * one must run with the fixtures that shipped beside it. A future `files` edit
+ * that drops an example or its fixture fails here and names the path before
+ * publication.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -25,6 +27,21 @@ const REQUIRED = [
   'examples/mount-a-bundle.mjs',
   'examples/route-stubs.mjs',
 ];
+const EXPECTED_OUTPUT = {
+  'examples/aria.mjs': 'live region: polite -> "0"\nlabelled control: increment\n',
+  'examples/baseline.mjs': 'baseline: same\n',
+  'examples/mount-a-bundle.mjs': 'Demo panel Count 0 0\nDemo panel Count 1 1\n',
+  'examples/route-stubs.mjs': 'Score 71\nasked for: 1 route(s), undeclared route answers 404\n',
+};
+
+/** Give the temp install the optional peers the README names, without a registry read. */
+function linkPeers(prefix) {
+  for (const name of ['jsdom', 'react', 'react-dom']) {
+    const source = path.join(ROOT, 'node_modules', name);
+    assert.ok(fs.existsSync(source), `npm ci did not install ${name}, so the examples cannot be run`);
+    fs.symlinkSync(source, path.join(prefix, 'node_modules', name), process.platform === 'win32' ? 'junction' : 'dir');
+  }
+}
 
 /**
  * Every distinct `examples/<name>.mjs` the READMEs tell a reader to pass to
@@ -37,7 +54,7 @@ function documentedExamples() {
   );
 }
 
-test('a fresh install contains the four examples the shipped README cites', () => {
+test('a fresh install ships and runs the four examples the shipped README cites', () => {
   const documented = documentedExamples();
   const cited = [...documented.keys()].sort();
   assert.deepEqual(
@@ -72,8 +89,8 @@ test('a fresh install contains the four examples the shipped README cites', () =
     );
 
     const prefix = path.join(scratch, 'install');
-    // The examples need optional peers (react, jsdom) to run, but the acceptance
-    // case is the installed file list. `--omit=peer` keeps the guard offline.
+    // The examples need optional peers (react, jsdom) to run; `--omit=peer`
+    // keeps the install offline, and the peers are linked below.
     run('npm', ['install', path.join(scratch, document.filename), '--prefix', prefix, '--no-save', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=peer'], {
       cwd: scratch,
       encoding: 'utf8',
@@ -96,6 +113,20 @@ test('a fresh install contains the four examples the shipped README cites', () =
       REQUIRED.map((example) => path.basename(example)).sort(),
       'the installed examples directory has a different set of .mjs files than the README cites',
     );
+
+    // The fixtures the examples mount are part of the shipped package too. Run
+    // each command from outside the install so a relative path cannot borrow
+    // the checkout's copy and pass by accident.
+    linkPeers(prefix);
+    for (const example of REQUIRED) {
+      const output = run(process.execPath, [path.join(installedRoot, example)], {
+        cwd: scratch,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, NODE_PATH: '', HOME: prefix, USERPROFILE: prefix, UPDATE_SNAPSHOTS: '' },
+      });
+      assert.equal(output, EXPECTED_OUTPUT[example], `the installed ${example} printed something else`);
+    }
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }

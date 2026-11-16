@@ -4,11 +4,25 @@
  * Run: node examples/baseline.mjs
  * First run writes nothing; re-run with UPDATE_SNAPSHOTS=1 to create the file.
  */
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { expectSnapshot, mountClient } from 'dsh-plugin-toolkit/testkit';
 
-const panel = await mountClient({ file: 'fixtures/client-bundle/client.js', copy: { demo: { title: 'Demo' } } });
+// Resolve the bundle and its baseline from the package, not from the caller's
+// cwd: the same command has to work in a checkout and in an installed package.
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const panel = await mountClient({
+  file: path.join(ROOT, 'fixtures/client-bundle/client.js'),
+  resolveFrom: ROOT,
+  copy: { demo: { title: 'Demo' } },
+});
 
-const result = expectSnapshot(panel.html(), 'fixtures/client-bundle/__snapshots__', 'panel');
+const result = expectSnapshot(
+  panel.html(),
+  path.join(ROOT, 'fixtures/client-bundle/__snapshots__'),
+  'panel',
+);
 console.log(`baseline: ${result.status}`);
 
 await panel.unmount();

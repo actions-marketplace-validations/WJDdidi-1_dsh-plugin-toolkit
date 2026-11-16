@@ -146,7 +146,9 @@ in the right sidebar, for when the conversation is busy.
 The panel speaks both languages and opens in Chinese; the 中文 / EN switch sits
 in the dock's header row (and in the sidebar tab) and the choice is remembered.
 
-Look at it without the app:
+Look at it without the app. The preview mounts the panel with the testkit, so it
+needs the optional peers; install them once with
+`npm install --save-dev jsdom react react-dom`:
 
 ```sh
 node scripts/preview.mjs /tmp/panel.html   # collapsed, open, with a result, and the tab
@@ -217,7 +219,7 @@ want to assert on it yourself.
 
 `must()` throws with the rendered markup when the selector misses, which is the difference between "the assertion failed" and "here is what the user actually got".
 
-Every example below is a file in this repository, run by CI, and the output shown is the output it prints:
+Every example below is shipped in the package, run by CI, and the output shown is the output it prints:
 
 | Example | What it shows |
 | --- | --- |
