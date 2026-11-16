@@ -69,6 +69,43 @@ test('the sample is reproducible from the checked-in manifest', () => {
   assert.equal(actual, expected, 'the reproducible sample no longer prints the README output');
 });
 
+test('the sample shows the same verdict in the JSON a CI reads', () => {
+  const section = compatibilitySection();
+  const block = fencedBlocks(section).find((entry) => entry.includes('$ node scripts/compatibility-sample.mjs --json'));
+  assert.ok(block, 'the section does not show the machine-readable reproduction');
+  const expected = commandOutput(block);
+  const actual = execFileSync(
+    process.execPath,
+    [path.join('scripts', 'compatibility-sample.mjs'), '--json'],
+    { cwd: ROOT, encoding: 'utf8' },
+  );
+  assert.equal(actual, expected, 'the reproducible JSON no longer matches the README');
+
+  const findings = JSON.parse(actual);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].target, 'L3n3L/dsh-resume');
+  assert.equal(findings[0].host, '0.2.2-alpha.3');
+  assert.equal(findings[0].compatibility, 'incompatible');
+  assert.match(
+    section,
+    /not on `failures\.length` alone/u,
+    'the section does not warn that the compatibility verdict is the finding',
+  );
+});
+
+test('the sample refuses an argument it does not understand', () => {
+  assert.throws(
+    () =>
+      execFileSync(process.execPath, [path.join('scripts', 'compatibility-sample.mjs'), '--jsn'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      }),
+    (error) => error.status === 2 && /unknown argument --jsn/u.test(String(error.stderr)),
+    'a typo should be a usage error, not a replay of the default form',
+  );
+});
+
 test('every compatibility flag named in the README is a real CLI flag', () => {
   const section = compatibilitySection();
   const documented = new Set([...section.matchAll(/(?<![\w-])--[a-z][a-z-]*/gu)].map((entry) => entry[0]));

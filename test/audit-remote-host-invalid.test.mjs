@@ -10,15 +10,19 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { run } from '../lib/cli.mjs';
+import { auditRemoteTargets } from '../lib/audit.mjs';
+import { auditRemote } from '../lib/remote.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin', 'dsh-plugin.mjs');
-const INVALID = ['banana', '0.2', '>=0.2.0', 'latest'];
+const INVALID = ['banana', '0.2', '>=0.2.0', 'latest', '', '   '];
 
 function recorder() {
   const lines = [];
@@ -96,6 +100,76 @@ test('the batch mode validates the host before it reads the list file', async ()
   assert.doesNotMatch(output, /cannot read|ENOENT|unknown/u, 'the list was read before the host was validated');
 });
 
+function listFile(t, contents) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-host-contract-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'repos.txt');
+  fs.writeFileSync(file, contents);
+  return file;
+}
+
+test('the batch form rejects --host banana from a real list without reading GitHub or printing a finding', async (t) => {
+  const list = listFile(t, 'acme/clean\n');
+  let requests = 0;
+  const stdout = [];
+  const stderr = [];
+  const io = {
+    log: (line) => stdout.push(String(line)),
+    error: (line) => stderr.push(String(line)),
+  };
+
+  const code = await run(['audit', '--remote', '--from', list, '--host', 'banana', '--json'], io, {
+    fetchImpl: async (url) => {
+      requests += 1;
+      throw new Error(`the command read ${url} before rejecting the --host value`);
+    },
+  });
+
+  assert.equal(code, 2);
+  assert.equal(requests, 0, 'an invalid host made a GitHub request');
+  assert.deepEqual(stdout, [], 'an invalid host printed a JSON finding');
+  assert.match(stderr.join('\n'), /--host needs a complete DSH version such as 0\.2\.2.*banana/u);
+});
+
+test('both forms give a blank remote host the library contract sentence, not the local-URL hint', async (t) => {
+  const list = listFile(t, 'acme/clean\n');
+  for (const args of [
+    ['audit', '--remote', 'acme/clean', '--host', '   '],
+    ['audit', '--remote', '--from', list, '--host', '   '],
+  ]) {
+    const io = recorder();
+    const code = await run(args, io, { fetchImpl: noRequest() });
+
+    assert.equal(code, 2, args.join(' '));
+    assert.match(io.lines.join('\n'), /--host needs a complete DSH version such as 0\.2\.2, got "   "/u);
+    assert.doesNotMatch(io.lines.join('\n'), /running app URL/u, 'a remote audit used the local URL hint');
+  }
+});
+
+test('the batch valid-host control still exits 0 with a compatible finding', async (t) => {
+  const list = listFile(t, 'acme/clean\n');
+  const io = recorder();
+
+  const code = await run(['audit', '--remote', '--from', list, '--host', '0.2.0'], io, {
+    fetchImpl: github(),
+  });
+
+  assert.equal(code, 0, io.lines.join('\n'));
+  assert.match(io.lines.join('\n'), /\[compatible with dsh 0\.2\.0; declares ">=0\.2\.0"\]/u);
+});
+
+test('the shipped CLI rejects the batch form before it opens the list', (t) => {
+  const list = listFile(t, 'acme/clean\n');
+  const result = spawnSync(process.execPath, [BIN, 'audit', '--remote', '--from', list, '--host', 'banana'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /--host needs a complete DSH version such as 0\.2\.2.*banana/u);
+  assert.equal(result.stdout, '');
+});
+
 test('the shipped CLI exits 2 for an unparseable host and prints nothing on stdout', () => {
   const result = spawnSync(process.execPath, [BIN, 'audit', '--remote', 'demo/plugin', '--host', 'banana'], {
     cwd: ROOT,
@@ -118,4 +192,59 @@ test('a leading v is a version, so the compatibility answer is still reached', a
   assert.equal(row.host, 'v0.2.2');
   assert.equal(row.hostRange, '>=0.2.0');
   assert.equal(row.compatibility, 'compatible');
+});
+
+test('the acceptance case names --host and banana, prints no finding and makes no request', async () => {
+  let requests = 0;
+  const stdout = [];
+  const stderr = [];
+  const io = {
+    log: (line) => stdout.push(String(line)),
+    error: (line) => stderr.push(String(line)),
+  };
+
+  const code = await run(['audit', '--remote', 'acme/clean', '--host', 'banana', '--json'], io, {
+    fetchImpl: async (url) => {
+      requests += 1;
+      throw new Error(`the command read ${url} before rejecting the --host value`);
+    },
+  });
+
+  assert.equal(code, 2);
+  assert.equal(requests, 0, 'an invalid host made a GitHub request');
+  assert.deepEqual(stdout, [], 'an invalid host printed a JSON finding');
+  const message = stderr.join('\n');
+  assert.match(message, /--host/u, 'the message did not name --host');
+  assert.match(message, /banana/u, 'the message did not quote the rejected value');
+});
+
+test('the valid 0.2.0 control still exits 0 with a compatible finding', async () => {
+  const io = recorder();
+  const code = await run(['audit', '--remote', 'acme/clean', '--host', '0.2.0', '--json'], io, {
+    fetchImpl: github(),
+  });
+
+  assert.equal(code, 0, io.lines.join('\n'));
+  const [row] = JSON.parse(io.lines.join('\n'));
+  assert.equal(row.host, '0.2.0');
+  assert.equal(row.compatibility, 'compatible');
+});
+
+test('the exported single-target and batch audits hold the same host contract before a read', async () => {
+  let requests = 0;
+  const fetchImpl = async (url) => {
+    requests += 1;
+    throw new Error(`the library read ${url} before rejecting the --host value`);
+  };
+
+  await assert.rejects(() => auditRemote('acme/clean', { fetchImpl, host: 'banana' }), /--host.*banana/u);
+  await assert.rejects(() => auditRemoteTargets('acme/clean', { fetchImpl, host: 'banana' }), /--host.*banana/u);
+  await assert.rejects(() => auditRemote('acme/clean', { fetchImpl, host: '   ' }), /--host.*"   "/u);
+  await assert.rejects(() => auditRemoteTargets('acme/clean', { fetchImpl, host: '' }), /--host.*""/u);
+  await assert.rejects(
+    () => auditRemoteTargets(undefined, { fetchImpl, from: '/does/not/exist', host: 'banana' }),
+    /--host.*banana/u,
+    'the list file was read before the host was validated',
+  );
+  assert.equal(requests, 0, 'an invalid host made a GitHub request');
 });

@@ -435,10 +435,13 @@ What it can see, and what it cannot:
   declares. A repository whose checkout fails `readme` fails the remote check
   too, with the same sentence.
 - File checks (does `exports["./client"]` point at a file that exists, does the
-  root export `apply`) need the tree. A package that runs `prepack`,
-  `prepublishOnly`, `prepare` or `build` publishes files it does not commit, so
-  those checks are **skipped with a note** instead of calling a working plugin
-  broken.
+  root export `apply`) need the tree. npm runs `prepack` and `prepare` before
+  `npm pack` creates the tarball, and `prepublishOnly` before `npm publish`
+  does, so a package whose lifecycle hook builds those files publishes files it
+  does not commit: those checks are **skipped with a note** instead of calling a
+  working plugin broken. A plain `build` script is not a lifecycle hook and is
+  not evidence by itself, because npm never runs it unless `prepack` or
+  `prepare` calls it; put the build there if it produces shipped files.
 - Public repositories work anonymously, but GitHub allows 60 requests an hour.
   Export `GH_TOKEN` (or `GITHUB_TOKEN`) to audit more than one or two.
 
@@ -501,6 +504,31 @@ sample audits the repository's current default branch instead; a README or
 manifest change since 0.1.3 can add another `readme` or manifest failure to the
 same row.
 
+CI should read the same answer as data. This is the reproducible sample again,
+with the flag that changes the form rather than the verdict:
+
+```sh
+$ node scripts/compatibility-sample.mjs --json
+[
+  {
+    "target": "L3n3L/dsh-resume",
+    "version": "0.1.3",
+    "hostRange": ">=0.1.0-rc.6 <0.2.0-0",
+    "failures": [],
+    "notes": [],
+    "host": "0.2.2-alpha.3",
+    "compatibility": "incompatible"
+  }
+]
+```
+
+`compatibility` is the finding for an incompatible range; the object does not
+invent a second entry in `failures` for the same fact. Gate on `compatibility`
+or the process exit code, not on `failures.length` alone, or a host mismatch
+will look clean. The command still exits `1`, and the test suite compares this
+block with the JSON the executable prints, so the documented shape cannot drift
+from the code that emits it.
+
 The line carries the range `package.json` declares and one of `compatible`,
 `incompatible`, or `unknown` against that host version. `unknown` is the honest
 answer for a missing or malformed range — there is nothing to compare — while a
@@ -525,12 +553,16 @@ A bare `--host` is a usage error, not an audit without the comparison: the
 command exits `2` before it reads GitHub, and `--host --json` does not consume
 the `--json` flag as a version. The value itself must be a complete version
 (`0.2.2`, `v0.2.2`, or `0.2.2-alpha.3`): a range (`>=0.2.0`), a partial version
-(`0.2`), or a tag name is rejected with exit `2` before any repository is read,
-so a typo cannot turn into a clean-looking `unknown` row.
+(`0.2`), a tag name, or a blank value is rejected with exit `2` before any
+repository is read or the `--from` list is opened, so a typo cannot turn into a
+clean-looking `unknown` row. The single-target and batch forms use the same
+check and the same message.
 
 `--host` still names the running app URL for a local `audit`; on `--remote` it
-is the DSH version to compare against. With `--json`, each finding gains
-`host` and `compatibility` beside `hostRange`.
+is the DSH version to compare against. With `--json`, each finding whose
+manifest was read gains `host` and `compatibility` beside `hostRange`; an
+unreadable or rate-limited repository has no manifest to compare, so it keeps
+its own verdict and does not invent a range or an `unknown` answer.
 
 Each repository gets one line with its verdict — `clean`, `failing`,
 `unreadable`, or `rate-limited` — and the run ends with a counted summary:
@@ -628,11 +660,11 @@ $ dsh-plugin audit --remote --from repos.txt --json
 Every repository produces one object with `target`, `version`, `hostRange`,
 `failures` (`{ check, message }`) and `notes`, and the command exits `1` when any
 repository has a problem. With `--host <version>` each object also carries
-`host` and `compatibility`. A rate-limited repository adds `rateLimited: true`
-and a `rateLimit` object with the HTTP `status` and, when GitHub sent one,
-`resetAt`; it is not marked `unreadable`. A network error is printed in `notes`
-and still exits `1`: a repository the tool could not read is never reported as
-clean. Packages that build before they pack
+`host` and `compatibility` once its manifest was read. A rate-limited
+repository adds `rateLimited: true` and a `rateLimit` object with the HTTP
+`status` and, when GitHub sent one, `resetAt`; it is not marked `unreadable`. A
+network error is printed in `notes` and still exits `1`: a repository the tool
+could not read is never reported as clean. Packages that build before they pack
 keep their file-level checks in `notes` as before.
 
 When the list is a repair queue rather than a report, add `--patch-dir`:
@@ -762,7 +794,9 @@ nothing written; pass --write to apply
 ```
 
 An incomplete version such as `--host 0.3` is refused before the manifest is
-read, and `--range` still wins when both flags are passed.
+read. Passing `--range` beside `--host` is allowed only when that range accepts
+the host; a contradictory pair is refused before the manifest is read, the same
+as in `fix`.
 
 Checks that cannot be repaired without guessing — a missing patch file, a root
 export that points at the CLI, a README with no Requirements section — still
@@ -808,8 +842,11 @@ dsh-plugin fix: wrote engines.dsh ">=0.3.0 <1.0.0" (was missing)
     /Users/you/my-panel/package.json
 ```
 
-A host version that is not complete semver is refused, and `--range` still wins
-when it is passed beside `--host`.
+A host version that is not complete semver is refused. `--range` wins when it
+is passed beside `--host`, but only when that range accepts the host: a pair
+that disagrees is refused instead of written, because a range that excludes the
+host would leave the install failing. Drop `--range` to let `--host` aim the
+range automatically, or pass a range that includes the host version.
 
 For a repository you have not cloned, see
 [Repair a repository you have not cloned](#repair-a-repository-you-have-not-cloned):

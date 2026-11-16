@@ -200,7 +200,7 @@ test('a package that builds before it packs skips the file checks and says so', 
   const files = {
     ...plugin,
     'package.json': JSON.stringify(
-      manifest({ scripts: { prepack: 'tsc', build: 'tsc' }, engines: { dsh: '>=0.2.0' } }),
+      manifest({ scripts: { prepack: 'tsc' }, engines: { dsh: '>=0.2.0' } }),
     ),
   };
   const { fetchImpl } = github(files);

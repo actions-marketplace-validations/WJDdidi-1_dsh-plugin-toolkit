@@ -11,6 +11,10 @@
  * not from a hand-written example or a library-only shortcut.
  *
  * Run: node scripts/compatibility-sample.mjs
+ *      node scripts/compatibility-sample.mjs --json
+ *
+ * `--json` replays the same command with the flag CI reads, so the machine
+ * form is checked against the executable too, not just described in prose.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -24,6 +28,13 @@ const SAMPLE = path.join(ROOT, 'examples', 'compatibility-sample');
 const BIN = path.join(ROOT, 'bin', 'dsh-plugin.mjs');
 const TARGET = 'L3n3L/dsh-resume';
 const HOST = '0.2.2-alpha.3';
+const JSON_OUTPUT = process.argv.includes('--json');
+
+const unknown = process.argv.slice(2).filter((argument) => argument !== '--json');
+if (unknown.length > 0) {
+  process.stderr.write(`compatibility-sample: unknown argument ${unknown.join(' ')}; use --json for the machine form\n`);
+  process.exit(2);
+}
 
 // A CommonJS preload works on every Node version the package supports; an
 // `--import` hook would require a newer Node than `engines` promises.
@@ -63,19 +74,17 @@ function replay() {
   const preload = path.join(scratch, 'github-preload.cjs');
   try {
     fs.writeFileSync(preload, PRELOAD);
-    const result = spawnSync(
-      process.execPath,
-      ['--require', preload, BIN, 'audit', '--remote', TARGET, '--host', HOST],
-      {
-        cwd: ROOT,
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          DSH_COMPATIBILITY_SAMPLE: SAMPLE,
-          DSH_COMPATIBILITY_TARGET: TARGET,
-        },
+    const command = ['--require', preload, BIN, 'audit', '--remote', TARGET, '--host', HOST];
+    if (JSON_OUTPUT === true) command.push('--json');
+    const result = spawnSync(process.execPath, command, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        DSH_COMPATIBILITY_SAMPLE: SAMPLE,
+        DSH_COMPATIBILITY_TARGET: TARGET,
       },
-    );
+    });
     if (result.error !== undefined) throw result.error;
     const stderr = String(result.stderr ?? '').trim();
     if (result.status !== 1) {

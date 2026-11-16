@@ -26,7 +26,7 @@ const cleanFiles = {
     version: '1.2.3',
     main: 'index.js',
     engines: { dsh: '>=0.2.0' },
-    scripts: { build: 'node build.mjs' },
+    scripts: { prepack: 'node build.mjs' },
     dsh: { bundle: { patch: 'cordis.patch.yml' }, client: { platform: 'web' } },
     exports: { '.': './index.js', './client': './client.js' },
     files: ['index.js', 'client.js', 'cordis.patch.yml', 'README.md'],

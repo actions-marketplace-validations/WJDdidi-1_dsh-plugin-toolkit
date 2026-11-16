@@ -1,4 +1,89 @@
-## 0.20.33
+## 0.20.36
+
+- **`audit --remote` no longer reads an arbitrary `build` script as a pre-pack
+  hook.** The remote audit skipped the patch, client and root-export file
+  checks whenever `scripts` had a `build` entry, but npm never runs a plain
+  `build` script during `npm pack`; only its lifecycle hooks do. A repository
+  whose only hook was `scripts.build` therefore passed with no `client.js` in
+  the tree even though the tarball contained no bundle either. Build evidence
+  now comes only from `prepack` and `prepare` (which run for `npm pack`) and
+  `prepublishOnly` (which runs before `npm publish` packs), and an empty hook
+  is not evidence. `test/audit-remote-build-hooks.test.mjs` crosses both
+  process boundaries: it asks npm what three build-only fixtures actually
+  ship, runs the shipped CLI against the same committed tree, and requires exit
+  `1` with a failure naming `client.js`; each fixture's `build` script would
+  create the client if npm ran it, so the test also proves `npm pack` leaves it
+  alone. A `prepack` fixture and a `prepare` fixture that create the file in
+  the tarball still exit `0` with the skipped-files note, and a committed
+  client beside a `build` script stays clean without the built note. The
+  README and `docs/repair.md` state the same rule.
+
+## 0.20.35
+
+- **The compatibility answer now has a reproducible machine-readable form.**
+  The README's "Will this plugin install on my DSH?" section already showed
+  the real `audit --remote --host` output for `L3n3L/dsh-resume@0.1.3` from the
+  checked-in snapshot; it now also shows
+  `node scripts/compatibility-sample.mjs --json`. `scripts/compatibility-sample.mjs`
+  gains the `--json` form of the same replay, so both the human line and the CI
+  object come from the shipped executable. The section spells out that an
+  incompatible range is reported through `compatibility` (and the exit code)
+  rather than an extra `failures` entry, so a consumer that counts only
+  `failures.length` cannot mistake a host mismatch for a clean object.
+  `test/readme-compatibility.test.mjs` compares both documentation blocks with
+  the script's output and pins the JSON shape.
+
+- **A blank remote `--host` gets the same refusal as any other invalid
+  version.** `audit --remote owner/repo --host '   '` and the batch form used
+  to fall through the generic "running app URL" hint because the value was
+  empty, while the exported audit functions reported the complete-version
+  sentence. The CLI now identifies the remote form before it resolves the
+  target, the jobs or a list file, and routes blank and whitespace values
+  through `hostVersionIssue()`; the host check also runs before `--jobs`
+  parsing. The single-target and `--from` forms are pinned with their
+  valid-host controls in `test/audit-remote-host-invalid.test.mjs`: the
+  real-list invalid case, the shared blank message, the shipped batch exit
+  code, and the `compatible` control.
+
+- **A host-aimed repair can no longer write a range that excludes the host.**
+  `fix --engines --host 0.3.0 --range ">=0.5.0"` printed `host 0.3.0 is not
+  inside the explicit range`, then wrote `>=0.5.0` and exited `0` — the same
+  install failure if it was applied. The local fixer, `doctor --fix` and
+  `fix --remote` now share the same decision: an explicit `--range` wins only
+  when it accepts the named host, and a contradictory pair is a usage error
+  before anything is written or any GitHub request is made. The message names
+  both values, explains npm's pre-release rule when that is the only reason the
+  host is excluded, and points at dropping `--range` to aim the range
+  automatically. `fix --remote --host banana --write` also names the bad host
+  instead of the read-only refusal, and that refusal now names `--patch` as the
+  way to save the repair for a checkout. `test/fix-host-conflict.test.mjs`
+  pins the local, `doctor --fix` and remote paths, the accepting-range control,
+  and re-applies a remote patch to assert the written range accepts `0.3.0` and
+  rejects `1.0.0`.
+
+- **The remote audit refuses an invalid `--host` before any read, whichever
+  entry point is used.** The CLI already stopped `--host banana` with exit `2`,
+  but `auditRemote()` and `auditRemoteTargets()` — the single-target and batch
+  paths the command delegates to — still accepted it, read GitHub and answered
+  `compatibility: "unknown"`. All three now share `hostVersionIssue()`, so a
+  value that is not a complete DSH version is rejected before the repository or
+  a `--from` list is read. The acceptance case
+  (`audit --remote acme/clean --host banana --json`) is pinned: exit `2`, the
+  message names `--host` and `banana`, stdout stays empty and the mocked fetch
+  is never called; `--host 0.2.0` still exits `0` with `compatible`. The
+  regression test covers the CLI, both exported fan-out functions and a batch
+  whose list file must not be opened.
+
+- **`audit --remote --host` no longer claims a range it never read.** A
+  repository GitHub answered with a 500 or skipped after a rate limit was
+  printed as `unknown with dsh <version>; declares no engines.dsh range`, even
+  though `package.json` was never read. The host fields are now attached only
+  when a manifest exists, so unreadable and rate-limited rows keep their own
+  verdict without a fabricated range or compatibility answer. The regression
+  test pins the unreadable row, the skipped batch row and a readable control
+  that still gets `compatible`.
+
+## 0.20.34
 
 - **`audit --remote` names every finding the same way and never reads a
   failed request as clean.** A batch given GitHub URLs reported the rows it had
@@ -37,6 +122,9 @@
   `package.json does not hold a JSON object`, so the fixer reports the file the
   same way it reports a parse error. The installed-plugin audit uses the same
   reader and gets the cleaner message without a second code path.
+
+## 0.20.33
+
 - **`fix --remote --patch` keeps a CRLF manifest's line endings in the diff.**
   The diff splitter normalized `\r\n` to `\n`, so a `package.json` saved on
   Windows produced hunks whose context and removed lines lacked the carriage
