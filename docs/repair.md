@@ -139,8 +139,18 @@ tag is created, which is cheaper than discovering it after the tag is public.
 ```
 
 The quoted value in the second line is whatever is in `package.json` — `1.2`,
-`0.2`, `latest`, and a leading `v` all fail. So do empty pre-release or build
-identifiers, such as `1.0.0-..` and `1.0.0+build..1`.
+`0.2`, `latest`, and a leading `v` all fail. So do a leading zero in the core
+(`01.2.3`), a leading zero in a numeric pre-release identifier (`1.2.3-01`),
+and empty pre-release or build identifiers (`1.2.3-..`,
+`1.0.0+build..1`). The same strict parser decides whether `release --dry-run`
+may plan a `plugin-v...` tag, so a rejected version never prints a tag command
+that the real release would refuse to run.
+
+A valid version can still derive a tag git will not create: a pre-release or
+build identifier that ends in `.lock` (`1.2.3-rc.lock`) makes an illegal ref, as
+does a `--tag-prefix` containing a space, `..`, a leading dot or a `.lock`
+component. `release --dry-run` reports those as a `tag` failure before it prints
+any `git tag` command, instead of leaving the failure to the real release.
 
 **Smallest fix.** Write a normal semver value in `package.json`:
 
@@ -450,14 +460,28 @@ for the whole `dist/` subtree, and `lib/*.js` covers only direct children of
 `lib`. A leading `!` is npm's exclusion marker: `["lib", "!lib/secret.js"]`
 ships the folder but not the file, and a later positive entry can re-include
 what an earlier `!` removed. A path covered only by the positive entry and then
-removed by a negation is reported as missing. `doctor --remote` and
-`audit --remote` run this same check against the manifest GitHub serves, so a
-glob or a negation that hides an exported file fails there too. This check is
-about the manifest; `verify` is what proves the packed tarball actually contains
-the file. The test suite packs a committed negation fixture
-(`files: ["lib", "!lib/secret.js"]`), requires `npm pack` to leave the exported
-client out of the tarball, and requires `doctor` to report it on every run, so
-the prediction cannot drift from the packer.
+removed by a negation is reported as missing.
+
+npm disables a root `.npmignore` when `files` is present, but it still applies a
+`.npmignore` inside a subdirectory, and uses that folder's `.gitignore` when it
+has no `.npmignore`. The check walks every declared path through those files
+too, so `"files": ["lib"]` plus a `lib/.npmignore` naming `client.js` is
+reported when `exports["./client"]` points at `lib/client.js`. Those ignore
+rules use npm's minimatch syntax, including extglob:
+`@(client|other).js`, `+(client|other).js`, `?(client|other).js`,
+`*(client|other).js` and a negative `!(...)` group all remove the same paths
+`npm pack` removes. Two npm exceptions are kept: an explicit file entry in
+`files` re-includes that file, and a later `!` rule in the subdirectory ignore
+file puts it back.
+
+`doctor --remote` and `audit --remote` run this check against the manifest
+GitHub serves, so a glob or a negation that hides an exported file fails there
+too; only the subdirectory part needs a checkout. `verify` is what proves the
+packed tarball actually contains the file. The test suite packs a committed
+negation fixture (`files: ["lib", "!lib/secret.js"]`) and a set of temp
+subdirectory-ignore fixtures, requires `npm pack` and `doctor` to agree on each,
+and requires the missing exported client to be reported on every run, so the
+prediction cannot drift from the packer.
 
 **What you see.**
 
@@ -467,8 +491,10 @@ the prediction cannot drift from the packer.
 ```
 
 The second line names every path that is missing, separated by commas. npm always
-adds `package.json`, the README, the license, the changelog, and the `main` file,
-so `doctor` does not ask for those; everything else has to be listed.
+adds `package.json`, the README, the license, the changelog, and the `main` file
+to the `files` allowlist, so `doctor` does not ask for those; everything else
+has to be listed. A subdirectory ignore file can still remove one of them from
+the tarball, and that is reported the same way.
 
 **Smallest fix.** Add the missing path, or its parent folder, to `files`:
 

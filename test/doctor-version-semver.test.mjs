@@ -7,12 +7,14 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { checkVersion, doctor } from '../lib/doctor.mjs';
+import { parseStrictVersion } from '../lib/compat.mjs';
 import { run } from '../lib/exec.mjs';
 import { init } from '../lib/init.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(here, '..', 'bin', 'dsh-plugin.mjs');
 const scratch = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-version-'));
+const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 
 /** A clean `init` scaffold with its manifest version replaced. */
 function scaffold(version) {
@@ -30,11 +32,26 @@ function runCli(args) {
 }
 
 const valid = ['1.0.0+build.5', '2.3.4+sha.abc', '0.1.0+20261103'];
-const invalid = ['1.0.0-..', '1.0.0-.', '1.0.0+build..1', '1.0.0-01'];
+const acceptedControls = ['1.2.3', '1.2.3-rc.1'];
+// The acceptance forms from the milestone: a leading zero in the core, a
+// leading zero in a numeric pre-release identifier, and a bare-dot pre-release.
+const acceptanceInvalid = ['01.2.3', '1.2.3-01', '1.2.3-..'];
+const invalid = [...acceptanceInvalid, '1.0.0-..', '1.0.0-.', '1.0.0+build..1', '1.0.0-01'];
 
 test('checkVersion accepts SemVer 2.0 build metadata', () => {
   for (const version of valid) {
     assert.equal(checkVersion({ version }), null, version);
+  }
+});
+
+test('checkVersion and the shared strict parser accept exactly the same versions', () => {
+  const cases = [...acceptedControls, ...valid, ...invalid, 'v1.2.3', '=1.2.3', ' 1.2.3 ', '1.2.3\n'];
+  for (const version of cases) {
+    assert.equal(
+      checkVersion({ version }) === null,
+      parseStrictVersion(version) !== null,
+      `${JSON.stringify(version)}: doctor and parseStrictVersion disagree`,
+    );
   }
 });
 
@@ -106,6 +123,37 @@ test('doctor, release --dry-run and npm pack agree on build metadata', (t) => {
     const [packed] = JSON.parse(row.pack.stdout);
     assert.equal(packed.name, 'version-check-plugin');
     assert.equal(packed.version, row.version);
+  }
+});
+
+test('the accepted controls exit 0 and still plan their release tag', () => {
+  for (const version of acceptedControls) {
+    const dir = scaffold(version);
+
+    const doctorResult = runCli(['doctor', dir]);
+    assert.equal(doctorResult.status, 0, `${version}: ${doctorResult.stdout}${doctorResult.stderr}`);
+
+    const releaseResult = runCli(['release', dir, '--dry-run']);
+    assert.equal(releaseResult.status, 0, `${version}: ${releaseResult.stdout}${releaseResult.stderr}`);
+    assert.match(releaseResult.stdout, new RegExp(`Create the tag plugin-v${escape(version)}`, 'u'));
+  }
+});
+
+test('release --dry-run does not plan a tag for a version doctor rejects', (t) => {
+  for (const version of acceptanceInvalid) {
+    const dir = scaffold(version);
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const escaped = escape(version);
+
+    const doctorResult = runCli(['doctor', dir]);
+    assert.equal(doctorResult.status, 1, `${version}: ${doctorResult.stdout}${doctorResult.stderr}`);
+    assert.match(doctorResult.stderr, new RegExp(`✗ version: version "${escaped}" is not semver`, 'u'));
+
+    const releaseResult = runCli(['release', dir, '--dry-run']);
+    assert.equal(releaseResult.status, 1, `${version}: ${releaseResult.stdout}${releaseResult.stderr}`);
+    assert.match(releaseResult.stderr, new RegExp(`version "${escaped}" is not semver`, 'u'));
+    assert.doesNotMatch(releaseResult.stdout, /plugin-v/u, `${version}: ${releaseResult.stdout}`);
+    assert.doesNotMatch(releaseResult.stdout, /\bgit tag\b/u, `${version}: ${releaseResult.stdout}`);
   }
 });
 

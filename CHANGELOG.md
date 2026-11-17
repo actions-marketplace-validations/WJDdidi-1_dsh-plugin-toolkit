@@ -1,3 +1,53 @@
+## 0.20.40
+
+- **`doctor`'s subdirectory ignore matcher understands npm extglob patterns.**
+  A `lib/.npmignore` of `@(client|other).js` makes `npm pack` drop
+  `lib/client.js`, but the files-list check escaped the parentheses and read
+  the line as one literal filename, so it called the package clean. The glob
+  compiler now expands npm's extglob operators (`@()`, `+()`, `?()`, `*()` and
+  `!()`), including alternatives with their own wildcards, so the ignore rule
+  removes the same paths the packer does. `test/doctor-files-npmignore.test.mjs`
+  runs the extglob fixture and a literal `client.js` control against
+  `npm pack --dry-run --json` and three consecutive `doctor` runs.
+
+## 0.20.39
+
+- **`doctor`'s files-list check honors a `.npmignore` in a subdirectory.** npm
+  disables the root `.npmignore` when `files` exists, but a `lib/.npmignore`
+  (or the `lib/.gitignore` fallback) still removes files from the tarball. A
+  package whose `files: ["lib"]` shipped the folder while `lib/.npmignore`
+  dropped the `lib/client.js` named by `exports["./client"]` used to pass
+  `doctor` and fail after install. The check walks each declared path through
+  the subdirectory ignore files and keeps npm's two exceptions: an explicit
+  file entry in `files` re-includes that file, and a later `!` rule in the
+  subdirectory ignore file puts it back. `test/doctor-files-npmignore.test.mjs`
+  pins the reported case, the `.gitignore` fallback, a nested
+  `lib/nested/.npmignore`, and the unrelated-file and negation controls against
+  `npm pack --dry-run --json`.
+
+- **`release --dry-run` no longer plans a tag git will reject when the version
+  is valid.** A pre-release or build identifier ending in `.lock`
+  (`1.2.3-rc.lock`) is legal SemVer and packs with npm, but
+  `git tag plugin-v1.2.3-rc.lock` fails; an invalid `--tag-prefix` (a space or
+  `..`) had the same effect. `plan()` and the real release now apply git's
+  ref-name rules before printing or creating the tag, and report a `tag`
+  failure instead. `test/release.test.mjs` covers the valid controls, the
+  `.lock` version, an invalid prefix, and that the real release makes no git
+  calls for a name it refuses.
+
+- **`doctor` validates `version` with the same strict SemVer parser the rest of
+  the toolkit uses, and `release --dry-run` no longer prints a tag for a version
+  the preflight rejects.** The package version check had its own regex while
+  the compatibility code had another parser, so the two could disagree about
+  forms such as `01.2.3`, `1.2.3-01` and `1.2.3-..`. The shared parser now also
+  rejects malformed build identifiers (`1.2.3+build..1`), which the older
+  compatibility parser let through. `plan()` refuses to build a `plugin-v...`
+  tag when the version is invalid, and the CLI reports the version failure
+  instead of printing a command the real release would never run.
+  `test/doctor-version-semver.test.mjs` checks the parser agreement, the
+  accepted `1.2.3` / `1.2.3-rc.1` controls, and that the invalid forms exit `1`
+  without a tag in the dry-run plan.
+
 ## 0.20.38
 
 - **`doctor` accepts SemVer 2.0 build metadata in `version`, and rejects

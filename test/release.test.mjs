@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { plan, tagExists, tagName, workingTreeIsClean } from '../lib/release.mjs';
+import { isValidTagName, plan, tagExists, tagName, workingTreeIsClean } from '../lib/release.mjs';
 
 function tempRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-release-'));
@@ -50,6 +50,55 @@ test('the plan lists every step that a release has to finish, in order', () => {
   assert.ok(at(/push the tag/i) > at(/create the tag/i));
   assert.ok(at(/registry serves/i) > at(/push the tag/i));
   assert.ok(at(/market index/i) > at(/registry serves/i));
+});
+
+test('a tag name git would reject is not planned, even for a valid version', async (t) => {
+  assert.equal(isValidTagName('plugin-v1.2.3'), true);
+  assert.equal(isValidTagName('plugin-v1.2.3-rc.1+build.5'), true);
+  assert.equal(isValidTagName('plugin-v1.2.3-rc.lock'), false);
+  assert.equal(isValidTagName('plugin v1.2.3'), false);
+  assert.equal(isValidTagName('plugin-v1.2.3/../x'), false);
+
+  const { dir } = tempRepo();
+  const manifestPath = path.join(dir, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  // Valid SemVer, but `git tag plugin-v1.2.3-rc.lock` is not a legal ref.
+  manifest.version = '1.2.3-rc.lock';
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const planned = plan({ dir });
+  assert.equal(planned.tag, null);
+  assert.deepEqual(planned.steps, []);
+  assert.match(planned.failures[0].message, /not a valid git tag name/u);
+
+  // The prefix is the other source of a ref git will not create.
+  const prefixed = plan({ dir, version: '1.2.3', tagPrefix: 'plugin v' });
+  assert.equal(prefixed.tag, null);
+  assert.match(prefixed.failures[0].message, /not a valid git tag name/u);
+
+  // The real release stops at the same check, before it reads or writes git.
+  const { release } = await import('../lib/release.mjs');
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const plugin = fs.mkdtempSync(path.join(os.tmpdir(), 'rel-tag-name-'));
+  t.after(() => fs.rmSync(plugin, { recursive: true, force: true }));
+  fs.cpSync(path.join(here, 'fixtures', 'good'), plugin, { recursive: true });
+  const goodManifestPath = path.join(plugin, 'package.json');
+  const goodManifest = JSON.parse(fs.readFileSync(goodManifestPath, 'utf8'));
+  goodManifest.version = '1.2.3-rc.lock';
+  fs.writeFileSync(goodManifestPath, `${JSON.stringify(goodManifest, null, 2)}\n`);
+
+  let gitCalls = 0;
+  const result = await release({
+    dir: plugin,
+    git: () => {
+      gitCalls += 1;
+      return '';
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage, 'tag');
+  assert.match(result.failures[0].message, /not a valid git tag name/u);
+  assert.equal(gitCalls, 0, 'release must not ask git for a tag it will refuse');
 });
 
 test('--market writes the entry into another repository, and opens the PR there', async () => {
