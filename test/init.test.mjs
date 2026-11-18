@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { run } from '../lib/cli.mjs';
 import { doctor } from '../lib/doctor.mjs';
-import { init } from '../lib/init.mjs';
+import { files, init } from '../lib/init.mjs';
 import { mountClient } from '../lib/testkit/index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -192,6 +192,76 @@ test('init --title "Bob\'s panel" writes JavaScript that parses and a client tha
   const panel = await mountClient({ file: path.join(dir, 'client.js') });
   assert.match(panel.text(), /Bob's panel/);
   await panel.unmount();
+});
+
+test('a blank --title is refused before anything is written, with or without --force', () => {
+  for (const title of ['', '   ', '\t\n']) {
+    const dir = path.join(scratch(), 'plugin');
+    const result = init({ dir, name: 'blank-title', title });
+    assert.equal(result.ok, false, `${JSON.stringify(title)} should be refused`);
+    assert.equal(result.failures[0].check, 'title');
+    assert.match(result.failures[0].message, /--title/);
+    // The message has to say what to pass instead, not only that it is empty.
+    assert.match(result.failures[0].message, /--title "My panel"/);
+    assert.equal(fs.existsSync(dir), false, `${JSON.stringify(title)} created ${dir}`);
+  }
+
+  // --force governs overwriting an occupied directory, not an invalid flag.
+  const occupied = scratch();
+  fs.writeFileSync(path.join(occupied, 'notes.md'), 'mine\n');
+  const forced = init({ dir: occupied, name: 'blank-title', title: '', force: true });
+  assert.equal(forced.ok, false);
+  assert.deepEqual(fs.readdirSync(occupied), ['notes.md']);
+  assert.equal(fs.readFileSync(path.join(occupied, 'notes.md'), 'utf8'), 'mine\n');
+});
+
+test('the template renderer cannot emit the broken assertion when called directly', () => {
+  for (const title of ['', '   ', '\t\n']) {
+    assert.throws(
+      () => files({ name: 'template-guard', title }),
+      /--title needs a panel title, for example --title "My panel"/,
+      `${JSON.stringify(title)} rendered a scaffold instead of failing`,
+    );
+  }
+
+  // The default is still a real title, and the generated test parses.
+  const rendered = files({ name: 'template-guard' })['test/panel.test.mjs'];
+  assert.match(rendered, /assert\.match\(panel\.text\(\), \/My panel\/\)/);
+});
+
+test('init --title "" exits 2, names --title and the fix, and leaves no target', async () => {
+  const dir = path.join(scratch(), 'plugin');
+  const io = {
+    lines: [],
+    log(line) {
+      this.lines.push(String(line));
+    },
+    error(line) {
+      this.lines.push(String(line));
+    },
+  };
+  const code = await run(['init', dir, '--name', 'p', '--title', ''], io);
+  const output = io.lines.join('\n');
+  assert.equal(code, 2, output);
+  assert.match(output, /--title needs a panel title/);
+  assert.match(output, /--title "My panel"/);
+  assert.equal(fs.existsSync(dir), false);
+});
+
+// The reported failure was in the published binary, so pin the process
+// boundary too: run() and bin/dsh-plugin.mjs could drift apart on argv
+// handling without this test.
+test('the shipped CLI refuses a blank --title at the process boundary and writes nothing', () => {
+  const dir = path.join(scratch(), 'plugin');
+  const result = spawnSync(
+    process.execPath,
+    [path.join(ROOT, 'bin', 'dsh-plugin.mjs'), 'init', dir, '--name', 'p', '--title', ''],
+    { encoding: 'utf8' },
+  );
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /--title needs a panel title/);
+  assert.match(result.stderr, /--title "My panel"/);
+  assert.equal(fs.existsSync(dir), false);
 });
 
 test('the scaffold ships the test and the workflow it tells you to run', () => {

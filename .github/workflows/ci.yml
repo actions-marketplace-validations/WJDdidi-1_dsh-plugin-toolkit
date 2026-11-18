@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The arm64 pool can be slow. The daily schedule is the fallback that still
-  # gives the arm Mac build coverage when a push cannot acquire a runner.
+  # The daily schedule is the fallback that gives every platform a run when a
+  # push cannot acquire a runner.
   schedule:
     - cron: '17 5 * * *'
   workflow_dispatch:
@@ -17,8 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Keep the push/PR macOS leg on the predictable Intel image; the arm64
-        # job below covers the host the plugin is actually loaded on.
+        # Keep the push/PR macOS leg on the predictable Intel image. The Linux
+        # arm64 job below covers the architecture the plugin is loaded on.
         os: [ubuntu-latest, macos-15-intel, windows-latest]
         node: [18, 20, 22]
     steps:
@@ -30,27 +30,19 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  macos-arm64:
-    name: node 22 on macos-latest (arm64)
-    # The plugin is loaded by an arm Mac app, so arm64 needs a real host.
-    # Run it on main and on the scheduled/manual fallback, but never let a
-    # slow arm64 pool turn the whole workflow red: the run is serialized,
-    # bounded, and its job-level failure is inspected by the gate below.
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: macos-latest
+  linux-arm64:
+    name: node 22 on ubuntu-24.04-arm (arm64)
+    # The plugin is loaded by an arm Mac app, but GitHub's hosted arm64 macOS
+    # pool cancels a job that never acquires a runner after about fifteen
+    # minutes, and a cancelled job fails the workflow even with
+    # continue-on-error. Test the arm64 architecture on the free Linux arm64
+    # runner instead; macOS itself is covered by the macos-15-intel matrix
+    # above, and the suite has no macOS-only assertions.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
-    continue-on-error: true
-    concurrency:
-      group: ci-macos-arm64-${{ github.repository }}
-      cancel-in-progress: false
-    # A job that never acquired a runner has no step outcomes. A job that did
-    # get one must have run `npm test` successfully; this is what lets the gate
-    # tell capacity starvation apart from a real arm64 test failure.
     outputs:
       runner: ${{ steps.checkout.outcome }}
+      arch: ${{ steps.arch.outcome }}
       tests: ${{ steps.tests.outcome }}
     steps:
       - uses: actions/checkout@v4
@@ -59,27 +51,47 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The label asks for an arm64 runner; this proves the job actually got
+      # one. Without it a label change (or a label silently served by x64)
+      # would turn the arm64 leg into a green x64 run that covers nothing.
+      - name: the runner really is arm64
+        id: arch
+        run: |
+          arch="$(node -p 'process.arch')"
+          if [ "$arch" != "arm64" ]; then
+            echo "expected an arm64 runner, got $arch"
+            exit 1
+          fi
+          echo "arm64 runner: $arch"
       - run: npm ci
       - id: tests
         run: npm test
 
-  macos-arm64-gate:
+  arm64-gate:
     name: arm64 job did not hide a test failure
-    needs: macos-arm64
-    # Only the never-acquired case may pass without a test outcome.
-    if: always() && needs.macos-arm64.result != 'skipped'
+    needs: linux-arm64
+    if: always() && needs.linux-arm64.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
-      - name: the arm64 tests passed, or no runner was ever acquired
+      - name: the arm64 job ran its tests
         env:
-          RUNNER_OUTCOME: ${{ needs.macos-arm64.outputs.runner }}
-          TESTS_OUTCOME: ${{ needs.macos-arm64.outputs.tests }}
+          RUNNER_OUTCOME: ${{ needs.linux-arm64.outputs.runner }}
+          ARCH_OUTCOME: ${{ needs.linux-arm64.outputs.arch }}
+          TESTS_OUTCOME: ${{ needs.linux-arm64.outputs.tests }}
         run: |
-          if [ -n "$RUNNER_OUTCOME" ] && [ "$TESTS_OUTCOME" != "success" ]; then
-            echo "an arm64 runner was acquired but the tests did not pass (tests: ${TESTS_OUTCOME:-not run})"
+          if [ "$RUNNER_OUTCOME" != "success" ]; then
+            echo "the arm64 job did not complete its checkout (checkout: ${RUNNER_OUTCOME:-not run})"
             exit 1
           fi
-          echo "arm64 tests: ${TESTS_OUTCOME:-not run (runner never acquired)}"
+          if [ "$ARCH_OUTCOME" != "success" ]; then
+            echo "the arm64 job did not prove it ran on arm64 (arch: ${ARCH_OUTCOME:-not run})"
+            exit 1
+          fi
+          if [ "$TESTS_OUTCOME" != "success" ]; then
+            echo "the arm64 job ran but its tests did not pass (tests: ${TESTS_OUTCOME:-not run})"
+            exit 1
+          fi
+          echo "arm64 tests: success"
 
   dogfood:
     name: the tool on a real plugin

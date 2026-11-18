@@ -80,7 +80,7 @@ npx dsh-plugin-toolkit@latest release . --pr --merge
 
 ![Five steps, and the failure each one catches](https://raw.githubusercontent.com/WJDdidi-1/dsh-plugin-toolkit/main/docs/pipeline.svg)
 
-The order matters. Packing first means the check reads the file list npm will publish, not the folder you have. Installing the tarball means the root is imported by its bare specifier — the package name the loader uses — not by a file path taken from `main` or `exports["."]`. Node ignores `main` once `exports` exists, so a package whose `exports` map has no `"."` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` at that step even though the file is present. Mounting means the client bundle is actually executed, in jsdom, with a host that records what it registered.
+The order matters. Packing first means the check reads the file list npm will publish, not the folder you have. Installing the tarball means the root is imported by its bare specifier — the package name the loader uses — not by a file path taken from `main` or `exports["."]`. Node ignores `main` once `exports` exists, so a package whose `exports` map has no `"."` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` at that step even though the file is present. Mounting means the client bundle is actually executed, in jsdom, with a host that records what it registered. Packing first also means a panel built by a `prepack` hook exists when the source checks run: the hook has written it into the folder before `doctor`'s file checks are asked again.
 
 Each step exists because a plugin once got past the step before it and still installed into nothing.
 
@@ -131,7 +131,7 @@ created 8 file(s) in /Users/you/my-panel
 next: npm install && npm test && npm run doctor
 ```
 
-What you get is not a snippet: it is a plugin whose `doctor` already passes (`engines.dsh`, the patch file, the `files` list), with a client bundle that registers a sidebar tab, a testkit test for it, and a CI workflow that runs both. `init` refuses a directory that is not empty unless you pass `--force`, and refuses a name npm would refuse — those are the two mistakes that cost the most time later.
+What you get is not a snippet: it is a plugin whose `doctor` already passes (`engines.dsh`, the patch file, the `files` list), with a client bundle that registers a sidebar tab, a testkit test for it, and a CI workflow that runs both. `init` refuses a directory that is not empty unless you pass `--force`, a name npm would refuse, and a blank `--title` (pass one, such as `--title "My panel"`) — mistakes that cost the most time later.
 
 Every command that takes a path expands a leading `~` before touching the filesystem. The tool, not the shell, expands `~` for these arguments: `cmd` and PowerShell pass `"~/my-panel"` through literally, while a POSIX shell usually expands it first. `init '~/my-panel' --name my-panel` writes into your home directory (the same files `init ~/my-panel` writes on a POSIX shell), and `doctor '~/my-panel'` reads it back. The Windows spelling `~\my-panel` works too; a directory literally named `~` is never created.
 
@@ -319,7 +319,12 @@ exit code.
 `~\.dsh` expand. A bare `--home`, or one followed by another flag such as
 `--timeout 50` or `--json`, is a missing value rather than a request to scan
 `$HOME/.dsh` or a folder literally named after the flag: the command exits `2`,
-names `--home`, and prints no profile report.
+names `--home`, and prints no profile report. An explicit `--home` must be an
+existing directory: a missing path, a regular file and a dangling symlink each
+exit `2` naming `--home` and the resolved path, instead of printing "no plugins
+installed in any profile" for a home the audit never read. An existing empty
+directory still exits `0` with that line, and omitting `--home` still scans the
+default `~/.dsh`.
 
 Without `--host` the loaded column is `?`, because guessing would be worse than
 saying nothing. Only packages that declare a `dsh` field are audited — the rest of
@@ -401,8 +406,11 @@ forgets `client.js` passes it and fails only after `npm i`.
 `command: doctor` stops at the manifest checks (fast, no install), and
 `command: index` audits `market/index.json` instead, failing on any version whose
 `engines.dsh` is missing or is not a semver range (a malformed value such as
-`>=banana`, or a single pinned version such as `0.2.0`, both fail). Pin
-`version:` if you would rather not track the latest release.
+`>=banana`, or a single pinned version such as `0.2.0`, both fail). It also
+rejects an index it cannot audit: a missing `plugins` or `versions` array, a
+plugin entry without a name, a version entry without `version`, and a
+non-SemVer `version`. Each failure names the file and the plugin or entry.
+Pin `version:` if you would rather not track the latest release.
 
 ## Check a plugin you have not cloned
 
@@ -751,7 +759,7 @@ the diff in the terminal.
 
 The `root export` check is a source check, not an install. `doctor` resolves the module the loader imports — `exports["."]` when it is a string or a conditions object (`default`, `import`, `require`, `node`, `module-sync`), otherwise `main` — then checks that the path is a readable regular file, removes comments and the contents of string, template and regex literals, and looks for a real export. A missing file, a directory and an unreadable file are reported as `root export` failures naming the target instead of being skipped or raising a raw `EISDIR`; on a directory the install would have failed at import too. It accepts `export function apply`, `export async function apply`, `export const apply = ...` (also `let` and `var`), `export { apply }` (including `export { helper as apply }`), `exports.apply = ...`, and an `apply` property in `module.exports = { ... }`. A comment such as `// TODO: export function apply() {}` is not an export, and `doctor` never imports or runs the plugin to decide.
 
-`verify --no-mount` does not reopen the path `doctor` read. It imports the installed package by its bare name, the way the loader does, so Node's `exports` resolution decides. An `exports` map with no `.` entry therefore fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file, and `verify` reports a `root export` failure naming the missing `.` export instead of passing. `verify --no-mount` still runs `doctor` first, so a root the source check already rejects stops at that same check instead of packing. `npm test` spawns the shipped CLI for both commands on the comment-only fixtures and the missing-file, missing-conditions-file, string-root missing-file and directory fixtures, requires every one to exit `1` with a `root export:` line and no raw `EISDIR`, and requires `verify` to report `stopped at doctor` rather than a `pack:` failure. The unmodified scaffold still passes both commands.
+`verify --no-mount` does not reopen the path `doctor` read. It imports the installed package by its bare name, the way the loader does, so Node's `exports` resolution decides. An `exports` map with no `.` entry therefore fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file, and `verify` reports a `root export` failure naming the missing `.` export instead of passing. `verify --no-mount` still runs the manifest and root-export checks before packing, so a root the source check already rejects stops at that same check instead of packing. The checks for files a `prepack` hook can generate — `patch file`, `client entry`, `client declaration`, and a `files` list that names a path not yet on disk — wait until after `npm pack` has run, because the tarball contains what that hook wrote even though the folder did not. If those files are still missing after the pack, `verify` reports the same `doctor` checks. It runs that post-pack pass even when the first was clean, so a hook that writes a `client.js` nothing declares is rejected instead of shipping a panel the host never serves. `npm test` spawns the shipped CLI for both commands on the comment-only fixtures and the missing-file, missing-conditions-file, string-root missing-file and directory fixtures, requires every one to exit `1` with a `root export:` line and no raw `EISDIR`, and requires `verify` to report `stopped at doctor` rather than a `pack:` failure. The unmodified scaffold still passes both commands.
 
 Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged. `doctor --remote` and `audit --remote` run the same manifest and README checks (`name`, `version`, `engines.dsh`, `dsh field`, `files list`, `readme`) against the `package.json` and README GitHub serves, then check the files the manifest points at, so a bad package name or a README with no Requirements heading is reported before a clone or install. The `name` check is pinned at the process boundary: `npm test` expects the shipped CLI to reject a missing, empty and malformed name (`accepted=0/3`) and to accept a valid plain or scoped control.
 

@@ -1,5 +1,59 @@
 ## 0.20.40
 
+- **`index` rejects an unauditable market index instead of reporting it clean
+  or crashing.** A plugin without `versions` disappeared from the audit loop, a
+  `versions` string was read as an empty list and exited `0`, and an entry
+  without `version` or with a non-SemVer `version` either passed or produced a
+  raw TypeError. The command now validates the top-level `plugins` array, each
+  plugin's name and `versions` array, and each entry's SemVer `version` before
+  reading `engines.dsh`. Every finding exits `1` and names the index file plus
+  the plugin, entry position, or version at fault; invalid JSON and a missing
+  file name the path too. A valid `market/index.json` still exits `0` with its
+  `ok` line. `test/index-shape.test.mjs` pins the four reported shapes, a
+  top-level missing `plugins` array, invalid JSON, the valid SemVer controls,
+  and the clean CLI path.
+- **`verify` packs before the source-only file checks, so a `prepack`-generated
+  `client.js` is no longer rejected.** `doctor` reads the working copy, but npm
+  runs `prepack` before it builds the tarball. A plugin that generated its panel
+  in that hook was complete after `npm pack` and incomplete before it, so
+  `verify --no-mount` stopped at `client entry` / `client declaration` and never
+  packed the file it was looking for. Those checks now wait until after the
+  pack; a file that is still missing fails at `pack` naming it. Manifest and
+  root-export failures still stop before npm is asked, and a `files` list that
+  omits a path already on disk still stops at `doctor`. That includes a missing
+  `files` list, a `dsh.client.platform` other than `web`, and a client bundle
+  shipped without the `dsh.client` declaration or the `./client` export: no
+  file hook can add a manifest declaration, so verify reports those at `doctor`
+  and does not run the hook. After the pack, `doctor` runs again even when the
+  first pass was clean: a hook that writes a `client.js` the manifest never
+  declares is rejected instead of passing a panel the host will not serve.
+  `test/verify-prepack.test.mjs` spawns the shipped CLI on a generated-client
+  fixture, checks `npm pack --dry-run --json` lists `client.js`, keeps a
+  control whose `prepack` writes nothing red at `pack`, and covers the
+  generated-but-undeclared panel.
+- **`audit --home` refuses an explicit path that is not a directory.** A
+  missing path, a regular file and a dangling symlink all made `listInstalled`
+  find no `profiles/` below the path, so the command printed "no plugins
+  installed in any profile" and exited `0`; a CI gate passed on a profile the
+  audit never read. The CLI now stats the resolved path first, exits `2` with
+  `--home` and that resolved path in the message, and prints no report. An
+  existing empty directory still exits `0` with the empty line, and omitting
+  `--home` still scans `~/.dsh`. `test/audit-home-not-directory.test.mjs` pins
+  the three invalid shapes at the process boundary plus both controls.
+- **`init --title ""` is refused instead of writing a scaffold whose own test
+  does not parse.** An explicit empty (or whitespace-only) title reached the
+  template and became `assert.match(panel.text(), //)` in the generated
+  `test/panel.test.mjs`; `//` starts a comment, so the first `npm test` in a
+  brand-new plugin died with a generated `SyntaxError`. The CLI now exits `2`
+  with a message that names `--title` and the default to pass
+  (`--title "My panel"`), before it creates the target directory; a direct
+  `init()` caller gets the same refusal as a `title` failure and no files are
+  written. The template renderer that actually embeds the title refuses it as
+  well, so a future caller cannot regenerate the assertion by bypassing the
+  CLI. Omitting `--title` still gets the `My panel` template default, and a
+  normal title is unchanged. `test/init.test.mjs` covers fresh targets,
+  whitespace-only titles, `--force`, and the CLI exit code.
+
 - **`doctor`'s subdirectory ignore matcher understands npm extglob patterns.**
   A `lib/.npmignore` of `@(client|other).js` makes `npm pack` drop
   `lib/client.js`, but the files-list check escaped the parentheses and read

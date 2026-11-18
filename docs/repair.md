@@ -443,9 +443,17 @@ export. Restoring `exports["."]` makes the same fixture exit `0` and print
 If the root file named by `main`/`exports["."]` does not exist at all, `doctor`
 reports it as a `root export` failure naming that path instead of silently
 passing; a directory gets the same failure instead of a raw `EISDIR`.
-`verify --no-mount` runs `doctor` before it packs, so on these fixtures it exits
-at `stopped at doctor` with the same `root export` line and never reaches a
-`pack:` failure. The unmodified `init` scaffold still passes both commands.
+`verify --no-mount` runs the manifest and root-export checks before it packs, so
+on these fixtures it exits at `stopped at doctor` with the same `root export`
+line and never reaches a `pack:` failure. The source-only checks that a
+`prepack` hook can satisfy — `patch file`, `client entry`, `client declaration`,
+and a `files` list naming a path not yet on disk — wait until after `npm pack`
+has run. A package that generates `client.js` in that hook therefore passes
+`verify --no-mount`, while a package whose hook does not create the file still
+exits `1` at `pack` naming `client.js`. The post-pack pass runs even when the
+first pass was clean, so a hook that writes a `client.js` nothing declares is
+rejected instead of shipping a panel the host never serves. The unmodified
+`init` scaffold still passes both commands.
 
 ## files list
 
