@@ -1,4 +1,18 @@
-## 0.20.40
+## 0.20.42
+
+- **`doctor --remote` and `audit --remote` name a `package.json` that is not a
+  JSON object.** A manifest holding `null`, a string, a number or an array
+  parses as JSON, but the remote reader moved on and either failed inside the
+  first field check (`Cannot read properties of null`) or treated the array as
+  an empty object. The local reader already refuses those shapes with "does not
+  hold a JSON object"; the remote path now reports the same sentence as a
+  `manifest` failure naming the repository, and a host comparison stops there
+  instead of fabricating a range or verdict. A real object manifest still gets
+  the same compatibility answer. `test/audit-remote-manifest-shape.test.mjs`
+  pins the five shapes through the library, the CLI text row, `doctor --remote`
+  and the `--host`/`--json` path, with an object control.
+
+## 0.20.41
 
 - **`index` rejects an unauditable market index instead of reporting it clean
   or crashing.** A plugin without `versions` disappeared from the audit loop, a
@@ -53,6 +67,8 @@
   CLI. Omitting `--title` still gets the `My panel` template default, and a
   normal title is unchanged. `test/init.test.mjs` covers fresh targets,
   whitespace-only titles, `--force`, and the CLI exit code.
+
+## 0.20.40
 
 - **`doctor`'s subdirectory ignore matcher understands npm extglob patterns.**
   A `lib/.npmignore` of `@(client|other).js` makes `npm pack` drop
