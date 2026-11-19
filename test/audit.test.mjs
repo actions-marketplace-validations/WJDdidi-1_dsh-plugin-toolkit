@@ -69,6 +69,47 @@ test('only packages that declare a dsh field count as plugins', () => {
   assert.deepEqual(found, ['@scope/demo', 'demo-plugin']);
 });
 
+test('a declared bundle with a parsed manifest but no dsh field is reported, not omitted', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-home-'));
+  writeProfile(home, 'desktop', ['broken-bundle']);
+  // This is the false clean: the folder exists, the profile names it, and the
+  // package.json parses. Without the dsh field there is nothing for the loader
+  // to mount, but the old scan skipped it and printed "no plugins installed".
+  writePlugin(home, 'broken-bundle', { name: 'broken-bundle', version: '1.0.0' });
+  writePlugin(home, 'ordinary-dependency', { name: 'ordinary-dependency', version: '1.0.0' });
+
+  const found = listInstalled({ home });
+  assert.deepEqual(found.map((entry) => entry.manifest.name), ['broken-bundle']);
+  assert.equal(found[0].noDsh, true);
+  assert.equal(found[0].manifestPath, path.join(home, 'profiles', 'desktop', 'node_modules', 'broken-bundle', 'package.json'));
+
+  const lines = [];
+  const result = await audit({ home, io: { log: (line) => lines.push(line) } });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.plugins.map((plugin) => plugin.name), ['broken-bundle']);
+  assert.deepEqual(result.plugins[0].failures, [
+    { check: 'dsh field', message: 'package.json has no "dsh" field, so the host will not load it as a plugin' },
+  ]);
+  const text = lines.join('\n');
+  assert.match(text, /^broken-bundle\s+1\.0\.0\s+no dsh field\b/mu);
+  assert.match(text, /dsh field: package\.json has no "dsh" field/u);
+  assert.match(text, /fix: .*dsh\.bundle\.patch/u);
+  assert.doesNotMatch(text, /no plugins installed/u);
+  assert.doesNotMatch(text, /ordinary-dependency/u, 'an undeclared dependency without a dsh field stays out of the audit');
+});
+
+test('a declared bundle whose manifest omits name still gets a row under the declared name', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-home-'));
+  writeProfile(home, 'desktop', ['nameless-bundle']);
+  writePlugin(home, 'nameless-bundle', { version: '1.0.0' });
+  const lines = [];
+  const result = await audit({ home, io: { log: (line) => lines.push(line) } });
+  assert.equal(result.ok, false);
+  assert.equal(result.plugins[0].name, 'nameless-bundle');
+  assert.match(lines.join('\n'), /^nameless-bundle\s+1\.0\.0\s+no dsh field\b/mu);
+  assert.match(lines.join('\n'), /dsh field: package\.json has no "dsh" field/u);
+});
+
 test('a declared plugin with a truncated package.json is reported, not silently skipped', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-home-'));
   writeProfile(home, 'desktop', ['broken-plugin']);

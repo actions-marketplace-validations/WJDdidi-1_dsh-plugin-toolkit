@@ -219,10 +219,13 @@ beside the edit. If the declared range already accepts the host, its lower
 bound is kept and only the next-major ceiling is added (`>=0.2.0` becomes
 `>=0.2.0 <1.0.0`); every branch of an alternation range gets that same ceiling,
 so `>=0.2.0 <0.4.0 || >=0.5.0` gains it only on the branch that still accepts
-the next major. If the declared range already excludes the next major, there is
-nothing to apply. Both commands leave a range that already passes alone unless
-`--host` or `--range` explicitly asks for a different one, and `doctor --fix
---host` also aims a valid range that excludes the host, not only a missing one.
+the next major. A hyphen range that crosses the next major is rewritten in
+comparator form so its floor survives (`0.2.0 - 2.0.0` becomes
+`>=0.2.0 <1.0.0`). If the declared range already excludes the next major, there
+is nothing to apply. Both commands leave a range that already passes alone
+unless `--host` or `--range` explicitly asks for a different one, and `doctor
+--fix --host` also aims a valid range that excludes the host, not only a
+missing one.
 If `doctor` also reports `readme`, put the same range text in the README's
 `## Requirements` section.
 

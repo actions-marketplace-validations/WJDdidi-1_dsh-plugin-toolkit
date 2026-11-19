@@ -199,6 +199,56 @@ test('fix --remote --engines --host keeps a compatible declared floor in the pla
   assert.equal(satisfiesRange('>=0.2.0 <1.0.0', '1.0.0'), false);
 });
 
+test('--host keeps a hyphen range’s floor instead of dropping it', () => {
+  const dir = plugin({ dsh: '0.2.0 - 2.0.0' });
+
+  const result = fixEngines({ dir, host: '0.3.0', write: true });
+
+  assert.equal(result.written, true);
+  assert.match(result.why, /keeping that lower bound/u);
+  // The hyphen expression cannot carry an extra comparator, so it has to become
+  // the equivalent comparator set; appending directly would not parse and the
+  // planner would fall back to the host floor.
+  assert.equal(manifestOf(dir).engines.dsh, '>=0.2.0 <1.0.0');
+  assert.equal(satisfiesRange(manifestOf(dir).engines.dsh, '0.2.0'), true, 'the declared 0.2.x support was dropped');
+  assert.equal(satisfiesRange(manifestOf(dir).engines.dsh, '0.3.0'), true, 'the host is not accepted');
+  assert.equal(satisfiesRange(manifestOf(dir).engines.dsh, '1.0.0'), false, 'the next major is accepted');
+});
+
+test('--host caps a hyphen branch beside an alternation branch', () => {
+  const dir = plugin({ dsh: '0.2 - 2 || >=3.0.0' });
+
+  const result = fixEngines({ dir, host: '0.3.0', write: true });
+
+  assert.equal(result.written, true);
+  const written = manifestOf(dir).engines.dsh;
+  assert.equal(written, '>=0.2.0 <1.0.0 || >=3.0.0');
+  assert.equal(satisfiesRange(written, '0.2.9'), true, 'the declared 0.2.x support was dropped');
+  assert.equal(satisfiesRange(written, '0.3.0'), true, 'the host is not accepted');
+  assert.equal(satisfiesRange(written, '1.0.0'), false, 'the next major is accepted');
+});
+
+test('fix --remote --engines --host keeps a hyphen range’s floor in the plan', async () => {
+  const raw = `${JSON.stringify(
+    { name: 'demo-plugin', version: '1.2.3', engines: { dsh: '0.2.0 - 2.0.0' } },
+    null,
+    2,
+  )}\n`;
+  const io = recorder();
+
+  const code = await run(['fix', 'demo/plugin', '--remote', '--engines', '--host', '0.3.0'], io, {
+    fetchImpl: github(raw),
+  });
+
+  assert.equal(code, 0);
+  const output = io.lines.join('\n');
+  assert.match(output, /would write engines\.dsh ">=0\.2\.0 <1\.0\.0"/u);
+  assert.match(output, /keeping that lower bound/u);
+  assert.match(output, /^\+ {4}"dsh": ">=0\.2\.0 <1\.0\.0"$/mu);
+  assert.equal(satisfiesRange('>=0.2.0 <1.0.0', '0.3.0'), true);
+  assert.equal(satisfiesRange('>=0.2.0 <1.0.0', '1.0.0'), false);
+});
+
 test('the remote patch keeps a compatible floor in the written manifest', async (t) => {
   const raw = `${JSON.stringify(
     { name: 'demo-plugin', version: '1.2.3', engines: { dsh: '>=0.2.0' } },

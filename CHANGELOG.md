@@ -1,5 +1,48 @@
+## 0.20.44
+
+- **`audit --home` reports a declared bundle whose `package.json` parses but has
+  no `dsh` field.** The install scan skipped every package without a `dsh` field
+  as an ordinary dependency, even when the profile named it in
+  `dsh.profile.bundles`. A profile that mounted one such broken bundle printed
+  "no plugins installed in any profile" and exited 0, so CI saw a clean profile
+  the loader could not mount. The scan now emits a `no dsh field` row with a
+  `dsh field` failure naming the declaring `package.json` and exits 1. Packages
+  the profile does not declare keep the old skip, so a profile containing only
+  ordinary dependencies still exits 0. `test/audit-home-no-dsh.test.mjs` pins
+  the ghost row and its exit status at the CLI beside a valid declared bundle
+  and a profile holding only ordinary dependencies, while `test/audit.test.mjs`
+  covers the row and the declared-name fallback.
+
+## 0.20.43
+
+- **A host-aimed repair keeps the floor of a hyphen range that crosses the next
+  major.** `engines.dsh: "0.2.0 - 2.0.0"` plus `--host 0.3.0` could not carry
+  the appended `<1.0.0` comparator — npm only accepts the hyphen expression as
+  the whole branch — so the planner fell back to the host floor and wrote
+  `>=0.3.0 <1.0.0`, dropping the declared 0.2.x support. The hyphen branch is
+  now rewritten to its comparator form (`>=0.2.0 <1.0.0`), including partial
+  endpoints and a hyphen branch beside an alternation. `test/fix-host.test.mjs`
+  pins the local write, the alternation case, and the remote plan, asserting the
+  written range accepts the host and rejects one major above it.
+- **Ships the host-aimed repair that 0.20.42 documented but was cut before it
+  merged.** The 0.20.42 entry below describes keeping the lower bound a plugin
+  already supports and capping each branch of an alternation range; the pull
+  request landed after that release was tagged, so installers of 0.20.42 still
+  got the old `>=0.3.0 <1.0.0` rewrite. This release is that change.
+
 ## 0.20.42
 
+- **`audit --remote --host` names a malformed `engines.dsh` instead of calling
+  it missing.** A numeric or object value made `hostRange` return `null`, and
+  both the local check and the remote audit used the "missing" sentence, so the
+  report told an author to add a field that was already there while the host
+  answer stayed `unknown` without naming the real problem. The check now quotes
+  the value it cannot read (`engines.dsh 0.2 is not a string`), and a
+  non-object `engines` is named the same way. A truly absent or blank field
+  keeps the installer wording, and a readable range keeps its old verdict.
+  `test/audit-host.test.mjs` pins the remote path at the CLI, and
+  `test/doctor.test.mjs` pins both malformed shapes beside the missing-field
+  control.
 - **A host-aimed repair keeps the range a plugin already supports, and
   `doctor --fix --host` now aims a valid range that excludes the host.** The
   fixer replaced any valid range with the host floor, so `engines.dsh:

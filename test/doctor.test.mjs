@@ -168,6 +168,14 @@ test('doctor rejects a pinned or malformed engines.dsh, and accepts spans', () =
   assert.equal(checkHostRange({ engines: { dsh: '0.2.x' } }), null);
 });
 
+test('a malformed engines shape is named as malformed, not as missing', () => {
+  assert.match(checkHostRange({ engines: { dsh: 0.2 } }), /engines\.dsh 0\.2 is not a string/u);
+  assert.match(checkHostRange({ engines: { dsh: {} } }), /engines\.dsh \{\} is not a string/u);
+  assert.match(checkHostRange({ engines: '>=0.2.0' }), /"engines" is not an object/u);
+  // The genuinely absent field keeps the actionable "add the range" sentence.
+  assert.match(checkHostRange({ engines: {} }), /engines\.dsh is missing/u);
+});
+
 test('valid ranges keep their current verdict, including a two-sided span', () => {
   for (const range of ['>=0.2.0', '>=0.3.0 <0.4.0']) {
     assert.equal(hostRange({ engines: { dsh: range } }), range);

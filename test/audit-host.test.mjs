@@ -41,6 +41,7 @@ const REPOSITORIES = {
   'demo/missing': files(undefined),
   'demo/excludes': files('>=0.5.0'),
   'demo/malformed': files('not-a-range'),
+  'demo/non-string': files(0.2),
 };
 
 function github(repositories = REPOSITORIES) {
@@ -118,6 +119,19 @@ test('a malformed range prints unknown and keeps the declared text visible', asy
   const output = io.lines.join('\n');
   assert.match(output, /not-a-range/u, 'the malformed value should be quoted back');
   assert.match(output, /unknown with dsh 0\.3\.0/u);
+});
+
+test('a non-string engines.dsh is named as malformed, not as a missing field', async () => {
+  const io = recorder();
+  const code = await run(['audit', '--remote', 'demo/non-string', '--host', '0.3.0'], io, {
+    fetchImpl: github(),
+  });
+
+  assert.equal(code, 1);
+  const output = io.lines.join('\n');
+  assert.match(output, /unknown with dsh 0\.3\.0/u);
+  assert.match(output, /engines\.dsh 0\.2 is not a string/u, 'the value the author wrote should be quoted back');
+  assert.doesNotMatch(output, /engines\.dsh is missing/u, 'the field exists, so asking for it again sends the user in a circle');
 });
 
 test('the batch mode prints the same compatibility answer for every repository', async (t) => {

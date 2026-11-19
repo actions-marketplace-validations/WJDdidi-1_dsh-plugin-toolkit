@@ -327,8 +327,9 @@ directory still exits `0` with that line, and omitting `--home` still scans the
 default `~/.dsh`.
 
 Without `--host` the loaded column is `?`, because guessing would be worse than
-saying nothing. Only packages that declare a `dsh` field are audited — the rest of
-`node_modules` is ordinary dependencies, and auditing those is noise.
+saying nothing. Only packages that declare a `dsh` field, plus packages the
+profile names in `dsh.profile.bundles`, are audited — the rest of `node_modules`
+is ordinary dependencies, and auditing those is noise.
 
 An installed package whose `package.json` cannot be read is the exception: the
 `dsh` field that would mark it as a plugin is in the file that failed to parse.
@@ -340,6 +341,13 @@ sibling plugin is still listed on the same run. The exception stays narrow: a
 damaged `package.json` in a package that is neither in `dsh.profile.bundles` nor
 readable enough to expose a `dsh` field is still an ordinary dependency and is
 skipped, so one broken transitive install does not fail every audit.
+
+A declared bundle can also parse but carry no `dsh` field at all. The profile
+says the loader will mount it, so `audit` prints a `no dsh field` row with a
+`dsh field` failure naming the declaring `package.json` and exits `1`, instead
+of skipping the package and reporting the profile as having no plugins. The
+skip still applies to a package that is not in `dsh.profile.bundles`; a profile
+containing only ordinary dependencies prints no plugin rows and exits `0`.
 
 A declared bundle can also be missing entirely. If a name stays in
 `dsh.profile.bundles` after its `node_modules/<name>` folder is removed (an
@@ -477,7 +485,7 @@ verdict, and the remaining entries are reported without another request.
 
 ### Will this plugin install on my DSH?
 
-The fifteen compatibility reports, from four repositories, all end with the same
+The nineteen compatibility reports, from four repositories, all end with the same
 question. Add `--host <version>` to a remote audit and it answers that question
 for one repository. This is the output for `L3n3L/dsh-resume`, a real plugin
 whose declared range stops before DSH 0.2.0, checked against the
