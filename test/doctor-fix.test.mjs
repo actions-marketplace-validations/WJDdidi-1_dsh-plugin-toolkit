@@ -150,6 +150,45 @@ test('--host aims the engines repair at the DSH that rejected the install', asyn
   assert.equal(doctor(dir).failures.length, 0);
 });
 
+test('--host aims a valid range that excludes the host, not only a missing one', async () => {
+  const dir = plugin({ node: '>=18', dsh: '>=0.5.0' });
+  // The README names both the range doctor reads now and the range the host
+  // repair writes, so the first and second doctor runs are both clean.
+  fs.writeFileSync(
+    path.join(dir, 'README.md'),
+    '# repair-me\n\n## Requirements\n\n- DeepSeek Harness >=0.5.0\n- DeepSeek Harness >=0.3.0 <1.0.0\n',
+  );
+  const before = rawOf(dir);
+  const preview = recorder();
+
+  // Every check passes before the repair, so a preview leaves nothing failing;
+  // exit 0 is the same clean-repository contract as a repair written by hand.
+  assert.equal(await run(['doctor', dir, '--fix', '--host', '0.3.0'], preview), 0);
+  const output = preview.lines.join('\n');
+  assert.match(output, /1 requested repair\(s\)/u, 'a passing check was reported as failed');
+  assert.match(output, /would write engines\.dsh ">=0\.3\.0 <1\.0\.0"/u);
+  assert.match(output, /host 0\.3\.0 is inside ">=0\.3\.0 <1\.0\.0"/u);
+  assert.equal(rawOf(dir), before, 'a preview wrote the manifest');
+
+  const written = recorder();
+  assert.equal(await run(['doctor', dir, '--fix', '--host', '0.3.0', '--write'], written), 0);
+  assert.match(written.lines.join('\n'), /wrote engines\.dsh ">=0\.3\.0 <1\.0\.0"/u);
+  assert.equal(manifestOf(dir).engines.dsh, '>=0.3.0 <1.0.0');
+  assert.equal(doctor(dir).failures.length, 0);
+});
+
+test('--range explicitly replaces a valid range doctor accepts', async () => {
+  const dir = plugin({ node: '>=18', dsh: '>=0.2.0' });
+  fs.writeFileSync(
+    path.join(dir, 'README.md'),
+    '# repair-me\n\n## Requirements\n\n- DeepSeek Harness >=0.2.0\n- DeepSeek Harness >=0.4.0\n',
+  );
+
+  assert.equal(await run(['doctor', dir, '--fix', '--range', '>=0.4.0', '--write'], recorder()), 0);
+  assert.equal(manifestOf(dir).engines.dsh, '>=0.4.0');
+  assert.equal(doctor(dir).failures.length, 0);
+});
+
 test('--host with an incomplete version stops before reading or writing the manifest', async () => {
   const dir = plugin({ node: '>=18' });
   const before = rawOf(dir);

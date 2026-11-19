@@ -1,5 +1,21 @@
 ## 0.20.42
 
+- **A host-aimed repair keeps the range a plugin already supports, and
+  `doctor --fix --host` now aims a valid range that excludes the host.** The
+  fixer replaced any valid range with the host floor, so `engines.dsh:
+  ">=0.2.0"` plus `--host 0.3.0` became `>=0.3.0 <1.0.0` and silently dropped
+  every 0.2.x host the author had declared. It now keeps a lower bound that
+  already accepts the host and only adds the next-major ceiling, capping each
+  branch of an alternation range so `>=0.2.0 <0.4.0 || >=0.5.0` does not lose
+  its first branch; a range that already accepts the host and excludes the next
+  major is left alone. `doctor --fix --host` also planned nothing when `doctor`
+  accepted a range that still rejected the named host (`>=0.5.0` on 0.3.0),
+  because the plan only walked failed checks; an explicit `--host` or `--range`
+  is now a repair request through the same planner `fix --engines` uses, so the
+  two commands write the same range. `test/fix-host.test.mjs` pins the preserved
+  floor, the alternation branches, the no-op control, and the remote plan;
+  `test/doctor-fix.test.mjs` covers a valid but host-excluding range and an
+  explicit `--range`.
 - **`doctor --remote` and `audit --remote` name a `package.json` that is not a
   JSON object.** A manifest holding `null`, a string, a number or an array
   parses as JSON, but the remote reader moved on and either failed inside the

@@ -786,14 +786,15 @@ ok  my-panel@1.0.0 (host >=0.2.0)
 
 The write is limited to the edits in the plan: a missing or non-range
 `engines.dsh` becomes `>=0.2.0`, the other `engines` entries are left in place,
-and a range that already passes is not touched. `--range <range>` chooses the
-value used when `engines.dsh` needs repair, and `--dry-run` wins if it is passed
-alongside `--write`.
+and a range that already passes is not touched unless `--host` or `--range`
+asks for a different one. `--range <range>` chooses the value to write, and
+`--dry-run` wins if it is passed alongside `--write`.
 
 When the failed install names the host version, `--host` aims that repair at
 the DSH that rejected it instead of falling back to the default. It is the same
-decision as `fix --engines --host`, so the preview shows the range and why the
-next major is excluded, and `--write` applies exactly that edit:
+decision as `fix --engines --host`, including when the declared range is valid
+but excludes the host, so the preview shows the range and why the next major is
+excluded, and `--write` applies exactly that edit:
 
 ```sh
 $ npx dsh-plugin-toolkit@latest doctor --fix ./my-panel --host 0.3.0
@@ -836,14 +837,19 @@ dsh-plugin fix: wrote engines.dsh ">=0.2.0" (was missing)
 A missing value, or one `doctor` calls "not a semver range", becomes `>=0.2.0` — the
 same range `init` writes. A range that already passes the check is left alone,
 because `>=0.3.0` can be a deliberate statement about the host APIs the plugin
-uses; `--range <range>` asks for a different one explicitly. `fix` changes only
+uses; `--host` or `--range` can ask for a different one explicitly. `fix` changes only
 `engines.dsh` and leaves the other `engines` entries in place. `doctor` on its
 own still runs read-only, and its checks are unchanged; `fix` and `doctor --fix`
 change the manifest only when you pass `--write`.
 
 When the failed install names the host version, `--host` aims the range at that
 host instead of using the default. The written range accepts the host and stops
-before the next major, and the command prints that reasoning:
+before the next major, and the command prints that reasoning. A declared range
+whose lower bound already accepts the host keeps that bound and only gains the
+next-major ceiling (`>=0.2.0` with `--host 0.3.0` becomes
+`>=0.2.0 <1.0.0`), applying that ceiling to each branch of an alternation range
+so no branch the host supports is dropped; a declared range that already accepts
+the host and excludes the next major is left alone:
 
 ```sh
 $ npx dsh-plugin-toolkit@latest fix ./my-panel --engines --host 0.3.0 --write
@@ -921,9 +927,12 @@ $ git apply /tmp/dsh-run-guard-engines.patch
 unless you pass `--force`; its output names the file, and the repository it read
 is still untouched. The same host-aware plan works with `--patch`:
 `fix <owner>/<repo> --remote --engines --host 0.3.0 --patch repair.patch` plans
-`>=0.3.0 <1.0.0` and prints why. After cloning, `fix . --engines --host 0.3.0
---write` applies that same range; either path writes one that accepts the host
-and rejects the next major. The remote reader strips a UTF-8 BOM, so a manifest
+`>=0.3.0 <1.0.0` for a manifest with no range and prints why; if the manifest
+already declares a range that accepts the host, the remote plan keeps that lower
+bound the same way the local fixer does (`>=0.2.0` becomes
+`>=0.2.0 <1.0.0`). After cloning, `fix . --engines --host 0.3.0 --write`
+applies that same range; either path writes one that accepts the host and
+rejects the next major. The remote reader strips a UTF-8 BOM, so a manifest
 saved on Windows gives the same plan and the patch removes the BOM too. A
 `--host` or `--range` the planner cannot parse is refused before the GitHub
 read, so a typo names the flag instead of looking like a network failure or
