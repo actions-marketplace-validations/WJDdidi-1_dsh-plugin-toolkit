@@ -467,10 +467,15 @@ line and never reaches a `pack:` failure. The source-only checks that a
 and a `files` list naming a path not yet on disk — wait until after `npm pack`
 has run. A package that generates `client.js` in that hook therefore passes
 `verify --no-mount`, while a package whose hook does not create the file still
-exits `1` at `pack` naming `client.js`. The post-pack pass runs even when the
-first pass was clean, so a hook that writes a `client.js` nothing declares is
-rejected instead of shipping a panel the host never serves. The unmodified
-`init` scaffold still passes both commands.
+exits `1` at `pack` naming `client.js`. `verify` packs exactly once and judges
+that archive: a separate dry run would execute `prepack` again, and the second
+execution can see a tree the first one changed. A hook that removes a committed
+`client.js` while building the tarball therefore stops at `pack`, naming
+`client.js`, instead of passing on the source state from before the hook ran.
+The post-pack pass runs even when the first pass was clean, so a hook that
+writes a `client.js` nothing declares is rejected instead of shipping a panel
+the host never serves, and the unpacked copy is checked once more after install.
+The unmodified `init` scaffold still passes both commands.
 
 ## files list
 

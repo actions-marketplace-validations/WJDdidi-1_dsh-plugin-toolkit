@@ -80,7 +80,7 @@ npx dsh-plugin-toolkit@latest release . --pr --merge
 
 ![Five steps, and the failure each one catches](https://raw.githubusercontent.com/WJDdidi-1/dsh-plugin-toolkit/main/docs/pipeline.svg)
 
-The order matters. Packing first means the check reads the file list npm will publish, not the folder you have. Installing the tarball means the root is imported by its bare specifier — the package name the loader uses — not by a file path taken from `main` or `exports["."]`. Node ignores `main` once `exports` exists, so a package whose `exports` map has no `"."` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` at that step even though the file is present. Mounting means the client bundle is actually executed, in jsdom, with a host that records what it registered. Packing first also means a panel built by a `prepack` hook exists when the source checks run: the hook has written it into the folder before `doctor`'s file checks are asked again.
+The order matters. Packing first — exactly once — means the check reads the file list from the tarball `verify` installs, not from the folder you have. A separate dry run would execute `prepack` a second time, and that second execution can see a tree the first one changed, so the archive could differ from the list that was checked. Installing the tarball means the root is imported by its bare specifier — the package name the loader uses — not by a file path taken from `main` or `exports["."]`. Node ignores `main` once `exports` exists, so a package whose `exports` map has no `"."` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` at that step even though the file is present. Mounting means the client bundle is actually executed, in jsdom, with a host that records what it registered. Packing first also means a panel built by a `prepack` hook exists when the source checks run: the hook has written it into the folder before `doctor`'s file checks are asked again.
 
 Each step exists because a plugin once got past the step before it and still installed into nothing.
 
@@ -416,8 +416,11 @@ forgets `client.js` passes it and fails only after `npm i`.
 `engines.dsh` is missing or is not a semver range (a malformed value such as
 `>=banana`, or a single pinned version such as `0.2.0`, both fail). It also
 rejects an index it cannot audit: a missing `plugins` or `versions` array, a
-plugin entry without a name, a version entry without `version`, and a
-non-SemVer `version`. Each failure names the file and the plugin or entry.
+plugin entry without a name, two entries sharing one name, a version entry
+without `version`, and a non-SemVer `version`. Each failure names the file and
+the plugin, entry, or both duplicate positions. A duplicate is rejected before
+any audit, so the second entry cannot inherit the first entry's clean result or
+produce an `ok` line.
 Pin `version:` if you would rather not track the latest release.
 
 ## Check a plugin you have not cloned
@@ -1052,7 +1055,7 @@ ok  packed 5 file(s), installed the tarball, mounted the panel
     My panel This panel came from dsh-plugin init. Clicks: 0
 ```
 
-It packs, installs that tarball into a throwaway directory, then mounts the bundle **from the installed copy**. The host half is imported by the package's bare name, exactly as the loader imports it, so an `exports` map with no `.` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file; `verify --no-mount` reports that as a `root export` failure naming the missing `.` export. The host half is also called and awaited, so an `async apply()` that rejects is reported as a `host apply` failure instead of printing the success line and then crashing with an unhandled rejection; the client half's boot probe is awaited the same way, so an async `apply()` that rejects on the bare context is a `boot` failure. A package that declares neither `exports` nor `main` has no root module at all; there is nothing to import, and the success line says it skipped the host import instead of claiming one ran. When the `files` list drops the panel:
+It packs exactly once, reads that tarball's file list, installs the same tarball into a throwaway directory, then mounts the bundle **from the installed copy**. The file list therefore describes the archive users would get, and `prepack` is never asked to run a second time against a tree the first run changed. A hook that removes the panel while building the tarball — on its first run or a later one — is caught here, and the installed copy is checked again after unpacking. The host half is imported by the package's bare name, exactly as the loader imports it, so an `exports` map with no `.` entry fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file; `verify --no-mount` reports that as a `root export` failure naming the missing `.` export. The host half is also called and awaited, so an `async apply()` that rejects is reported as a `host apply` failure instead of printing the success line and then crashing with an unhandled rejection; the client half's boot probe is awaited the same way, so an async `apply()` that rejects on the bare context is a `boot` failure. A package that declares neither `exports` nor `main` has no root module at all; there is nothing to import, and the success line says it skipped the host import instead of claiming one ran. When the `files` list drops the panel:
 
 ```sh
 $ npx dsh-plugin-toolkit verify .

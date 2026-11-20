@@ -12,6 +12,14 @@
  * whose prepack does not generate the file must still exit 1 at `pack`, naming
  * `client.js`. The post-pack state is also asserted through `verify` directly,
  * where the stage and the failing check are easier to name.
+ *
+ * The file list has to come from the tarball `verify` installs, not from a
+ * source-tree prediction. `verify` therefore packs exactly once: a separate dry
+ * run would execute `prepack` a second time, and the second execution can see a
+ * tree the first one changed. The flip fixture (panel committed, hook removes
+ * it) and the non-idempotent fixture (hook writes it once, removes it later)
+ * pin both directions: a tarball without the panel fails, and a tarball with it
+ * passes even though a later run would produce a different one.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -53,6 +61,12 @@ function packedFiles(dir) {
   return new Set((document.files ?? []).map((entry) => entry.path));
 }
 
+/** How many times the non-idempotent fixture's prepack hook has run. */
+function prepackInvocations(dir) {
+  const file = path.join(dir, '.prepack-invocations');
+  return fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+}
+
 test('verify --no-mount packs a plugin whose prepack generates client.js', () => {
   const dir = copyFixture('verify-prepack-generated');
   try {
@@ -92,6 +106,95 @@ test('a prepack that does not generate client.js still fails at pack and names i
     assert.ok(packedFiles(dir).has('client.js') === false, 'the control tarball unexpectedly contains client.js');
   } finally {
     fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
+});
+
+test('verify packs a non-idempotent plugin once and judges the tarball it built', async () => {
+  const dir = copyFixture('verify-prepack-non-idempotent');
+  try {
+    assert.equal(fs.existsSync(path.join(dir, 'client.js')), false, 'the fixture must start without a panel');
+
+    // One invocation writes the panel, so that tarball does contain it and the
+    // verdict is success. The old dry-run-then-pack sequence would have run the
+    // hook twice and rejected a first run that shipped a working panel.
+    const first = await verify({ dir, mount: false });
+    assert.equal(first.ok, true, JSON.stringify(first.failures));
+    assert.equal(prepackInvocations(dir), 1, 'verify ran prepack more than once');
+    assert.ok(first.files.includes('client.js'), 'the first tarball should carry the generated panel');
+    assert.ok(fs.existsSync(path.join(dir, 'client.js')), 'the first prepack did not write the panel');
+
+    // The second invocation removes it. Verify must judge this run's archive,
+    // not the panel it saw before packing, so it fails at pack and says why.
+    const second = await verify({ dir, mount: false });
+    assert.equal(second.ok, false, JSON.stringify(second.failures));
+    assert.equal(second.stage, 'pack');
+    assert.equal(second.failures[0].check, 'pack');
+    assert.match(second.failures[0].message, /the tarball does not contain client\.js/u);
+    assert.equal(second.files.includes('client.js'), false, 'the reported file list came from before the pack');
+    assert.equal(prepackInvocations(dir), 2, 'a second verify should be exactly one more prepack');
+    assert.equal(fs.existsSync(path.join(dir, 'client.js')), false, 'the second prepack did not remove the panel');
+  } finally {
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
+});
+
+test('the shipped CLI runs a non-idempotent prepack once per verify, then rejects its tarball', () => {
+  // `verify` and `verify --no-mount` both have to judge the archive their own
+  // single pack produced. On a fresh copy the first invocation writes the
+  // panel, so that run exits 0; a second run on the same copy removes it, so
+  // that run must exit 1 at `pack` and name `client.js`. The old dry-run-then-
+  // pack sequence ran the hook twice on the first run, which changed the folder
+  // the tarball was checked against and could report success for a panel-less
+  // archive.
+  for (const args of [['verify'], ['verify', '--no-mount']]) {
+    const label = args.join(' ');
+    const dir = copyFixture('verify-prepack-non-idempotent');
+    try {
+      const first = spawnSync(process.execPath, [BIN, ...args, dir], { encoding: 'utf8' });
+      const firstOutput = `${first.stdout}\n${first.stderr}`;
+      assert.equal(first.status, 0, `${label} first run:\n${firstOutput}`);
+      assert.match(first.stdout, /^ok {2}/m, `${label} first run:\n${firstOutput}`);
+      assert.equal(prepackInvocations(dir), 1, `${label} first run ran prepack more than once:\n${firstOutput}`);
+      assert.ok(fs.existsSync(path.join(dir, 'client.js')), `${label} first run removed the panel it packed`);
+
+      const second = spawnSync(process.execPath, [BIN, ...args, dir], { encoding: 'utf8' });
+      const secondOutput = `${second.stdout}\n${second.stderr}`;
+      assert.equal(second.status, 1, `${label} second run:\n${secondOutput}`);
+      assert.match(secondOutput, /dsh-plugin verify: stopped at pack/u, `${label} second run:\n${secondOutput}`);
+      const line = secondOutput.split('\n').find((entry) => entry.includes('pack:'));
+      assert.ok(line, `${label} second run:\n${secondOutput}`);
+      assert.match(line, /client\.js/u, line);
+      assert.doesNotMatch(secondOutput, /^ok {2}/m, `${label} second run:\n${secondOutput}`);
+      assert.equal(prepackInvocations(dir), 2, `${label} second run should be exactly one more prepack`);
+      assert.equal(fs.existsSync(path.join(dir, 'client.js')), false, `${label} second run did not remove the panel`);
+    } finally {
+      fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+    }
+  }
+});
+
+test('the shipped CLI rejects the flip fixture 3/3 times with and without --no-mount', () => {
+  // The fixture's folder passes doctor (client.js is committed and declared)
+  // and its prepack removes the panel while building the tarball. Each command
+  // gets three fresh copies, so every iteration starts from the state a user
+  // would see; all six runs must exit 1 and name client.js or the pack stage.
+  for (const args of [['verify'], ['verify', '--no-mount']]) {
+    for (let run = 1; run <= 3; run += 1) {
+      const dir = copyFixture('verify-prepack-flip');
+      try {
+        const result = spawnSync(process.execPath, [BIN, ...args, dir], { encoding: 'utf8' });
+        const output = `${result.stdout}\n${result.stderr}`;
+        assert.equal(result.status, 1, `${args.join(' ')} run ${run}:\n${output}`);
+        assert.match(output, /dsh-plugin verify: stopped at pack/u, `${args.join(' ')} run ${run}:\n${output}`);
+        const line = output.split('\n').find((entry) => entry.includes('pack:'));
+        assert.ok(line, `${args.join(' ')} run ${run}:\n${output}`);
+        assert.match(line, /client\.js/u, line);
+        assert.doesNotMatch(output, /^ok {2}/m, `${args.join(' ')} run ${run}:\n${output}`);
+        assert.equal(fs.existsSync(path.join(dir, 'client.js')), false, 'the prepack hook did not flip the panel off');
+      } finally {
+        fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+      }
+    }
   }
 });
 

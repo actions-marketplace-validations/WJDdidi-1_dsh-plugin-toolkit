@@ -1,4 +1,56 @@
-## 0.20.44
+## 0.20.48
+
+- **`verify` packs exactly once, so `prepack` cannot change the archive after
+  the check read a different one.** The separate `npm pack --dry-run` was a
+  second invocation of the same hook: a non-idempotent `prepack` could write
+  `client.js` for the dry run and remove it for the real pack, and `verify` ran
+  user build code twice on every check. The dry run is gone. `verify` now runs a
+  single `npm pack`, judges that tarball's own file list, and — after installing
+  it — asks `doctor` again against the unpacked copy, so the installed patch,
+  client bundle and root are confirmed rather than assumed. A committed
+  `client.js` that `prepack` removes is caught at `pack` with the panel named.
+  `test/verify-prepack.test.mjs` pins one invocation per run on the
+  non-idempotent fixture across two runs at the library and, on the shipped CLI,
+  runs `verify` and `verify --no-mount` twice each on fresh copies: the first
+  run exits `0` after exactly one `prepack` and leaves the generated panel, and
+  the second exits `1` at `pack` naming `client.js`. It also spawns the shipped
+  CLI three times each for `verify .` and `verify --no-mount .` on the flip
+  fixture, requiring exit `1` every time; the generated-panel and
+  unmodified-scaffold controls still exit `0` with `ok  packed`.
+
+## 0.20.47
+
+- **`verify` judges the tarball it installs, not the separate dry run.** A
+  non-idempotent `prepack` could write `client.js` during `npm pack --dry-run`
+  and remove it during the real `npm pack`, so `verify --no-mount` checked a
+  file list that did not describe the archive it installed and printed
+  `ok packed` for a tarball with no panel. The file-list check now reads npm's
+  file list for the exact tarball the install step receives, so a missing
+  `client.js` stops at `pack` and exits 1. A `prepack` that generates the panel
+  still passes, and the unchanged `init` scaffold still exits 0 with `ok
+  packed`. `test/verify-prepack.test.mjs` pins the non-idempotent fixture at the
+  library and the shipped CLI beside the generated, missing, and scaffold
+  controls. It also packs the fixture twice to prove the regression premise:
+  the dry run lists `client.js` and the real tarball omits it, so the fixture
+  cannot silently stop reproducing the bug.
+
+## 0.20.46
+
+- **`index` rejects two plugin entries that share a name before auditing
+  either.** The audit resolves a plugin by name, so a second `dup-plugin` entry
+  re-read the first entry's versions and printed `ok` for both, even when the
+  duplicate was the broken one. The shape pass now groups plugin names by
+  position and emits one finding naming every duplicate position
+  (`plugins[0], plugins[1]`), so the command exits `1` before the `ok` loop can
+  start. Distinct names still audit and print `ok` for each entry. A unique
+  plugin may list several versions, and when its second version (`1.0.1`) omits
+  `engines.dsh` the command still exits `1` with `1.0.1 no engines.dsh` instead
+  of inheriting the clean first version.
+  `test/index-duplicate.test.mjs` pins the duplicate finding at the library and
+  the shipped CLI, the absence of either `ok` line, and both control paths,
+  including the finding for a second version that is missing its range.
+
+## 0.20.45
 
 - **The reproducible compatibility sample answers for the DSH version the
   reader runs, not only the canary in the reports.**
@@ -13,6 +65,8 @@
   sample, pins the forwarded statuses, and now invokes the parser with every
   documented compatibility flag so a README flag cannot survive only in the
   help text.
+
+## 0.20.44
 
 - **`audit --home` reports a declared bundle whose `package.json` parses but has
   no `dsh` field.** The install scan skipped every package without a `dsh` field
