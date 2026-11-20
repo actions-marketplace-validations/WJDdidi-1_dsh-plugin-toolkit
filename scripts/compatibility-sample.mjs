@@ -12,9 +12,16 @@
  *
  * Run: node scripts/compatibility-sample.mjs
  *      node scripts/compatibility-sample.mjs --json
+ *      node scripts/compatibility-sample.mjs --host 0.1.5
  *
  * `--json` replays the same command with the flag CI reads, so the machine
  * form is checked against the executable too, not just described in prose.
+ * `--host` asks the same frozen manifest about another DSH version, so a
+ * reader can reproduce the answer for the host they actually run; the default
+ * stays the canary from the reports. With an explicit host the script passes
+ * the replayed command's exit status through, because that is the status a CI
+ * step would gate on. Without it the wrapper exits 0 only after the known
+ * incompatible replay exited 1.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -27,13 +34,37 @@ const ROOT = path.join(HERE, '..');
 const SAMPLE = path.join(ROOT, 'examples', 'compatibility-sample');
 const BIN = path.join(ROOT, 'bin', 'dsh-plugin.mjs');
 const TARGET = 'L3n3L/dsh-resume';
-const HOST = '0.2.2-alpha.3';
-const JSON_OUTPUT = process.argv.includes('--json');
+const DEFAULT_HOST = '0.2.2-alpha.3';
 
-const unknown = process.argv.slice(2).filter((argument) => argument !== '--json');
-if (unknown.length > 0) {
-  process.stderr.write(`compatibility-sample: unknown argument ${unknown.join(' ')}; use --json for the machine form\n`);
+function usage(message) {
+  process.stderr.write(`compatibility-sample: ${message}\n`);
   process.exit(2);
+}
+
+let JSON_OUTPUT = false;
+let HOST = DEFAULT_HOST;
+let HOST_EXPLICIT = false;
+const args = process.argv.slice(2);
+for (let index = 0; index < args.length; index += 1) {
+  const argument = args[index];
+  if (argument === '--json') {
+    JSON_OUTPUT = true;
+  } else if (argument === '--host') {
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--') === true) {
+      usage('--host needs a complete DSH version, for example --host 0.2.2');
+    }
+    HOST = value;
+    HOST_EXPLICIT = true;
+    index += 1;
+  } else if (argument.startsWith('--host=') === true) {
+    const value = argument.slice('--host='.length);
+    if (value.trim() === '') usage('--host needs a complete DSH version, for example --host 0.2.2');
+    HOST = value;
+    HOST_EXPLICIT = true;
+  } else {
+    usage(`unknown argument ${argument}; use --json or --host <version>`);
+  }
 }
 
 // A CommonJS preload works on every Node version the package supports; an
@@ -87,18 +118,39 @@ function replay() {
     });
     if (result.error !== undefined) throw result.error;
     const stderr = String(result.stderr ?? '').trim();
-    if (result.status !== 1) {
-      throw new Error(
-        `the compatibility sample answered ${result.status ?? 'no status'}; the documented incompatible answer exits 1${
-          stderr === '' ? '' : `\n${stderr}`
-        }`,
-      );
+    // The CLI validates `--host` at the same boundary a real run uses. Forward
+    // that usage refusal instead of turning it into a wrapper stack trace; a
+    // typo in the version must not look like a successful replay.
+    if (result.status === 2) {
+      if (stderr === '') throw new Error('the compatibility sample exited 2 without saying why');
+      return { stdout: String(result.stdout ?? ''), stderr, status: 2 };
+    }
+    if (HOST_EXPLICIT === false) {
+      if (result.status !== 1) {
+        throw new Error(
+          `the compatibility sample answered ${result.status ?? 'no status'}; the documented incompatible answer exits 1${
+            stderr === '' ? '' : `\n${stderr}`
+          }`,
+        );
+      }
+      if (stderr !== '') throw new Error(`the compatibility sample wrote to stderr:\n${stderr}`);
+      // The wrapper's own 0 means the documented incompatible answer was
+      // reproduced; the default command is a demonstration, not a gate.
+      return { stdout: String(result.stdout ?? ''), stderr: '', status: 0 };
+    }
+    if (result.status !== 0 && result.status !== 1) {
+      throw new Error(`the compatibility sample answered ${result.status ?? 'no status'}${stderr === '' ? '' : `\n${stderr}`}`);
     }
     if (stderr !== '') throw new Error(`the compatibility sample wrote to stderr:\n${stderr}`);
-    return result.stdout;
+    // An explicit host is a question whose answer a reader may gate on, so the
+    // wrapper exits with the replayed CLI's status.
+    return { stdout: String(result.stdout ?? ''), stderr: '', status: result.status };
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 }
 
-process.stdout.write(replay());
+const replayed = replay();
+if (replayed.stdout !== '') process.stdout.write(replayed.stdout);
+if (replayed.stderr !== '') process.stderr.write(`${replayed.stderr}\n`);
+process.exitCode = replayed.status;

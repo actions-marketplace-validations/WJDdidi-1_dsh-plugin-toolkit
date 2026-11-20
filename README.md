@@ -499,9 +499,31 @@ incompatible  L3n3L/dsh-resume  0.1.3 (host >=0.1.0-rc.6 <0.2.0-0) [incompatible
 summary: 1 repository — 0 clean, 1 failing (1 problem), 0 unreadable, 0 rate-limited
 ```
 
-The verdict comes first: `incompatible` means the range in `package.json` does
+The sample defaults to that canary. Pass `--host` to ask the same frozen 0.1.3
+manifest about the version you actually run; this is the same range against an
+older stable host it accepts:
+
+```sh
+$ node scripts/compatibility-sample.mjs --host 0.1.5
+clean         L3n3L/dsh-resume  0.1.3 (host >=0.1.0-rc.6 <0.2.0-0) [compatible with dsh 0.1.5; declares ">=0.1.0-rc.6 <0.2.0-0"]
+
+summary: 1 repository — 1 clean, 0 failing (0 problems), 0 unreadable, 0 rate-limited
+```
+
+With an explicit `--host` the wrapper exits with the replayed command's status
+(`0` for this compatible line, `1` for a version the range rejects), so it can
+gate a CI step. The default form still exits `0` only after the documented
+incompatible replay exited `1`. An invalid version such as `banana` reaches the
+CLI's own `--host needs a complete DSH version` refusal and exits `2` instead
+of printing a clean-looking row.
+
+The line starts with the repository verdict: `clean` when the range accepts the
+host and every check passes, `incompatible` when the range is the failing fact.
+The bracketed `compatibility` field is the direct answer. `incompatible` means
+the range in `package.json` does
 not accept the host, so the installer rejects the plugin before it unpacks it.
-This run exits `1`. The same answer is reproducible without a GitHub request:
+An incompatible run exits `1`. The same answer is reproducible without a GitHub
+request:
 the checked-in snapshot under `examples/compatibility-sample/` keeps the 0.1.3
 manifest fields that decide compatibility, and its `## Requirements` heading
 isolates the host-range answer. This command feeds that snapshot through the

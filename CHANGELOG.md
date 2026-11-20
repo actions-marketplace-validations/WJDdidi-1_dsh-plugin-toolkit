@@ -1,5 +1,19 @@
 ## 0.20.44
 
+- **The reproducible compatibility sample answers for the DSH version the
+  reader runs, not only the canary in the reports.**
+  `node scripts/compatibility-sample.mjs --host 0.1.5` replays the frozen
+  `L3n3L/dsh-resume@0.1.3` manifest through the shipped CLI and prints the
+  `compatible` line the README now shows; the default command still prints and
+  checks the documented `incompatible` line. With an explicit `--host` the
+  wrapper exits with the replayed command's status, so a CI step can gate on
+  `0`/`1`, while an invalid version reaches the CLI's own complete-version
+  refusal and exits `2` instead of printing a misleading row.
+  `test/readme-compatibility.test.mjs` compares both documented blocks with the
+  sample, pins the forwarded statuses, and now invokes the parser with every
+  documented compatibility flag so a README flag cannot survive only in the
+  help text.
+
 - **`audit --home` reports a declared bundle whose `package.json` parses but has
   no `dsh` field.** The install scan skipped every package without a `dsh` field
   as an ordinary dependency, even when the profile named it in

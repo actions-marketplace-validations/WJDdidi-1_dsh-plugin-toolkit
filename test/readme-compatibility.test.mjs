@@ -6,7 +6,7 @@
  * the shipped CLI process against that folder.
  */
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { HELP } from '../lib/cli.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const BIN = path.join(ROOT, 'bin', 'dsh-plugin.mjs');
+const SAMPLE = path.join(ROOT, 'scripts', 'compatibility-sample.mjs');
 // A Windows checkout writes README.md with CRLF; normalise before matching so the
 // heading regex (which expects `\n` right after the title) works on every platform.
 const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8').replace(/\r\n/gu, '\n');
@@ -93,6 +95,51 @@ test('the sample shows the same verdict in the JSON a CI reads', () => {
   );
 });
 
+test('the sample answers for the host the reader runs, not only the canary', () => {
+  const section = compatibilitySection();
+  const block = fencedBlocks(section).find((entry) =>
+    entry.includes('$ node scripts/compatibility-sample.mjs --host 0.1.5'),
+  );
+  assert.ok(block, 'the section does not show the sample answering for another host');
+  const expected = commandOutput(block);
+  const actual = execFileSync(process.execPath, [SAMPLE, '--host', '0.1.5'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(actual, expected, 'the documented host answer no longer matches the sample');
+  assert.match(actual, /\[compatible with dsh 0\.1\.5/u);
+  assert.match(actual, /^summary: 1 repository — 1 clean, 0 failing \(0 problems\)/mu);
+});
+
+test('an explicit host forwards the replayed command status', () => {
+  const compatible = spawnSync(process.execPath, [SAMPLE, '--host', '0.1.5'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(compatible.status, 0, compatible.stderr);
+  assert.match(compatible.stdout, /compatible with dsh 0\.1\.5/u);
+
+  // The default wrapper exits 0 after proving the incompatible replay exited 1,
+  // but an explicit host is a question a CI step can gate on, so its status is
+  // the one the CLI answered with.
+  const incompatible = spawnSync(process.execPath, [SAMPLE, '--host', '0.3.0'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(incompatible.status, 1, incompatible.stderr);
+  assert.match(incompatible.stdout, /incompatible with dsh 0\.3\.0/u);
+
+  // Naming the canary explicitly turns the demonstration into the same
+  // question, so the wrapper must forward the CLI's 1 rather than the default
+  // form's post-check 0.
+  const explicitCanary = spawnSync(process.execPath, [SAMPLE, '--host', '0.2.2-alpha.3'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(explicitCanary.status, 1, explicitCanary.stderr);
+});
+
+test('an invalid --host reaches the CLI refusal and exits 2', () => {
+  const result = spawnSync(process.execPath, [SAMPLE, '--host', 'banana'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--host needs a complete DSH version such as 0\.2\.2, got "banana"/u);
+  assert.doesNotMatch(result.stdout, /clean|incompatible/u, 'a typo must not print a verdict');
+});
+
 test('the sample refuses an argument it does not understand', () => {
   assert.throws(
     () =>
@@ -119,6 +166,30 @@ test('every compatibility flag named in the README is a real CLI flag', () => {
     assert.ok(documented.has(flag), `the compatibility section no longer documents ${flag}`);
     assert.ok(help.has(flag), `--help no longer lists ${flag}`);
   }
+});
+
+test('the CLI parser accepts every documented compatibility flag, not just the help text', () => {
+  const section = compatibilitySection();
+  const documented = new Set([...section.matchAll(/(?<![\w-])--[a-z][a-z-]*/gu)].map((entry) => entry[0]));
+  const values = new Map([
+    ['--remote', 'demo/plugin'],
+    ['--host', '0.2.2'],
+    ['--from', 'repos.txt'],
+    ['--jobs', '4'],
+    ['--patch-dir', 'repairs'],
+  ]);
+  const argv = ['help'];
+  for (const flag of documented) {
+    argv.push(flag);
+    // Every flag in this section takes a value except --json; a parser that
+    // forgot one of the others would reject the invocation as an unknown flag
+    // or consume the following token as that flag's value.
+    if (values.has(flag) === true) argv.push(values.get(flag));
+  }
+  const result = spawnSync(process.execPath, [BIN, ...argv], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /unknown flag/u);
+  assert.match(result.stdout, /^Flags$/mu, 'the parser did not reach --help');
 });
 
 test('the sample launches the shipped CLI process instead of importing run()', () => {

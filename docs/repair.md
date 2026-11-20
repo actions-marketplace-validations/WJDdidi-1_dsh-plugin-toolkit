@@ -48,6 +48,13 @@ npx dsh-plugin-toolkit@latest audit --remote --from repos.txt --host 0.2.2-alpha
 npm's pre-release rule still applies, so `>=0.2.0` does not accept
 `0.2.2-alpha.3` unless the range names a pre-release of that same version.
 
+The same comparison runs without a GitHub request from the checked-in
+`examples/compatibility-sample/`:
+`node scripts/compatibility-sample.mjs --host <version>` replays the frozen
+`L3n3L/dsh-resume@0.1.3` manifest through the shipped CLI and exits with the
+command's status, so a script can answer for the host it runs before auditing a
+list.
+
 ## The loop
 
 1. Run the automatic repair, and let it re-check:

@@ -17,3 +17,9 @@ The heading is here on purpose: the sample isolates the host-range verdict, and
 the remote audit still checks README requirements. Upstream's localized README
 does not use a `## Requirements` heading, so a live audit of the repository can
 also add a `readme` failure to the same row.
+
+`node scripts/compatibility-sample.mjs` compares this manifest with the
+`0.2.2-alpha.3` canary from the reports. Add `--host <version>` to ask the same
+frozen manifest about the DSH version you run; the wrapper then exits with the
+replayed CLI's status, so `--host 0.1.5` exits `0` and a range-excluding version
+exits `1`.
