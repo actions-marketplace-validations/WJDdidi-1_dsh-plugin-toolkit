@@ -1,5 +1,17 @@
 ## 0.20.49
 
+- **`audit --remote --host` reads partial ranges the way npm does, so a
+  malformed `engines.dsh` cannot be reported compatible.** `engines.dsh:
+  ">=0.2+build"` was parsed as `>=0.2.0`: npm only reads a pre-release or build
+  suffix after the third version component, so the audit answered `compatible`
+  for a range the installer would reject. A suffix on a concrete partial is
+  now `unknown` and the value is quoted back. The same parser change accepts
+  the wildcard spellings npm does: `1.x.3` is the whole 1.x line, `x.2.3` is
+  every stable version, and `1.2.x+build` keeps the 1.2.x line while ignoring
+  the suffix. `test/audit-host-partial-version.test.mjs` pins the malformed
+  build case and both wildcard forms at the CLI and in the parser, beside the
+  compatible and next-major controls.
+
 - **`verify` reads npm's tarball answer even when `prepack` prints to stdout.**
   `npm pack --json` runs the hook before writing its JSON, so an `init`
   scaffold whose build prints `building panel` put that line ahead of the
