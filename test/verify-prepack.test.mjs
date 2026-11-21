@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { doctor } from '../lib/doctor.mjs';
 import { run } from '../lib/exec.mjs';
 import { init } from '../lib/init.mjs';
-import { verify } from '../lib/verify.mjs';
+import { parsePackOutput, verify } from '../lib/verify.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '..');
@@ -94,6 +94,14 @@ test('verify --no-mount packs a plugin whose prepack generates client.js', () =>
 test('a prepack that does not generate client.js still fails at pack and names it', () => {
   const dir = copyFixture('verify-prepack-missing');
   try {
+    // Keep the control honest: it must start without the panel, and doctor
+    // must see that as the only missing piece the hook could have generated.
+    assert.equal(fs.existsSync(path.join(dir, 'client.js')), false, 'the control fixture commits a panel');
+    assert.ok(
+      doctor(dir).failures.some((failure) => failure.check === 'client entry'),
+      'the missing-panel fixture does not actually miss its client entry',
+    );
+
     const result = verifyNoMount(dir);
     const output = `${result.stdout}\n${result.stderr}`;
     assert.equal(result.status, 1, output);
@@ -182,6 +190,20 @@ test('the shipped CLI rejects the flip fixture 3/3 times with and without --no-m
     for (let run = 1; run <= 3; run += 1) {
       const dir = copyFixture('verify-prepack-flip');
       try {
+        // Keep the missing-panel control honest: every iteration must start
+        // from a complete working copy that doctor accepts. Otherwise the
+        // fixture could lose its committed panel and this test would still
+        // pass for the wrong reason.
+        assert.deepEqual(
+          doctor(dir).failures,
+          [],
+          `${args.join(' ')} run ${run} did not start from a complete working copy`,
+        );
+        assert.ok(
+          fs.existsSync(path.join(dir, 'client.js')),
+          `${args.join(' ')} run ${run} fixture has no committed panel to remove`,
+        );
+
         const result = spawnSync(process.execPath, [BIN, ...args, dir], { encoding: 'utf8' });
         const output = `${result.stdout}\n${result.stderr}`;
         assert.equal(result.status, 1, `${args.join(' ')} run ${run}:\n${output}`);
@@ -219,6 +241,76 @@ test('a prepack-generated client.js that dsh.client does not declare is rejected
     assert.ok(fs.existsSync(path.join(dir, 'client.js')), 'prepack did not run in the plugin folder');
   } finally {
     fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
+});
+
+test('pack output is read even when a lifecycle hook writes to stdout first', () => {
+  const document = {
+    filename: 'panel-1.0.0.tgz',
+    size: 1234,
+    files: [{ path: 'client.js' }, { path: 'package.json' }],
+  };
+  // The shape of the failure: prepack's line precedes npm's answer, so a flat
+  // JSON.parse saw `building panel` where it expected `[`.
+  assert.deepEqual(parsePackOutput(`building panel\n${JSON.stringify([document])}`), [document]);
+  // A hook may print something that looks like the start of an answer, and npm
+  // may write a notice after its document. Only the pack-shaped document is
+  // accepted, and the scanner finds its own closing bracket.
+  assert.deepEqual(parsePackOutput(`[hook] starting\n${JSON.stringify([document])}\nnpm notice`), [document]);
+  assert.deepEqual(parsePackOutput(`[1, 2, 3]\n${JSON.stringify([document])}`), [document]);
+  // A hook may write without a trailing newline, so npm's document can begin
+  // in the middle of a line. Starting the scan only at line starts missed it.
+  assert.deepEqual(parsePackOutput(`building panel${JSON.stringify([document])}`), [document]);
+  assert.deepEqual(parsePackOutput(`building panel${JSON.stringify([document])}\nnpm notice`), [document]);
+  // A hook is free to print a pack-shaped document of its own. The answer npm
+  // writes after running the hook is the one that describes the tarball.
+  const hookDocument = { filename: 'hook-1.0.0.tgz', size: 1, files: [{ path: 'client.js' }] };
+  assert.deepEqual(
+    parsePackOutput(`${JSON.stringify([hookDocument])}\n${JSON.stringify([document])}`),
+    [document],
+  );
+  // An answer that was never contaminated still parses.
+  assert.deepEqual(parsePackOutput(JSON.stringify([document])), [document]);
+});
+
+test('the shipped CLI passes an init scaffold whose prepack prints to stdout', () => {
+  // Acceptance: the same freshly generated scaffold must exit 0 whether its
+  // build is silent, says one line, or writes that line without a newline. The
+  // line-separated case used to fail at `pack` with `Unexpected token 'b'`
+  // because npm's lifecycle output came first; the unterminated case still did
+  // until the scanner stopped requiring a newline before npm's answer.
+  const builds = {
+    silent: '',
+    noisy: "console.log('building panel');\n",
+    'no-newline': "process.stdout.write('building panel');\n",
+  };
+  for (const [label, buildScript] of Object.entries(builds)) {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), `dsh-verify-prepack-${label}-`));
+    const dir = path.join(parent, 'plugin');
+    try {
+      const scaffold = init({ dir, name: `${label}-prepack-scaffold`, title: `${label} prepack` });
+      assert.equal(scaffold.ok, true, JSON.stringify(scaffold.failures));
+
+      fs.writeFileSync(path.join(dir, 'build.mjs'), buildScript);
+      editManifest(dir, (manifest) => {
+        manifest.scripts = { ...manifest.scripts, prepack: 'node build.mjs' };
+      });
+      if (label !== 'silent') {
+        // Keep the fixture honest: if build.mjs stops printing, this test no
+        // longer reproduces the stdout contamination it is here to pin.
+        const expected = label === 'noisy' ? 'building panel\n' : 'building panel';
+        const build = spawnSync(process.execPath, ['build.mjs'], { cwd: dir, encoding: 'utf8' });
+        assert.equal(build.stdout, expected, `the ${label} build no longer prints the expected stdout`);
+      }
+
+      const result = verifyNoMount(dir);
+      const output = `${result.stdout}\n${result.stderr}`;
+      assert.equal(result.status, 0, `${label} prepack:\n${output}`);
+      const okLines = result.stdout.match(/^ok {2}packed /gm) ?? [];
+      assert.equal(okLines.length, 1, `${label} prepack must print one packed line:\n${output}`);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
   }
 });
 
