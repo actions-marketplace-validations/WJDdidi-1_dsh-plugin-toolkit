@@ -1,0 +1,17 @@
+{
+  "name": "patch-directory-nested",
+  "version": "1.0.0",
+  "description": "dsh.bundle.patch names a nested directory that exists",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./dist/bundle"
+    }
+  }
+}

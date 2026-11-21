@@ -1,0 +1,24 @@
+{
+  "name": "client-export-directory",
+  "version": "1.0.0",
+  "description": "exports['./client'] names a directory that exists",
+  "files": [
+    "bundle",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    "./client": "./bundle"
+  }
+}

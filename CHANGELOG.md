@@ -1,4 +1,63 @@
-## 0.20.49
+## 0.20.51
+
+- **`doctor` requires the patch file and the client bundle to be regular files,
+  not just paths that exist.** `checkPatchFile`, `checkClientEntry` and
+  `checkClientDeclaration` used `fs.existsSync`, so a manifest whose
+  `dsh.bundle.patch` named a directory, or whose `exports["./client"]` resolved
+  to one, passed every path check. The host then had no patch to apply and no
+  client module to serve, while `doctor` printed `ok`. Those checks now stat the
+  declared path and report a directory as `is a directory, not a regular file`;
+  the missing-path wording is unchanged. Six fixtures cover a bare patch path, a
+  `./`-prefixed one and a nested one, plus the same three spellings for the
+  client export (bare, `./`-prefixed, and a conditions object).
+  `test/doctor-declared-path-directory.test.mjs` asserts the library verdict and
+  spawns the shipped CLI, requiring exit `1`, the check name, the directory, and
+  no `ok` line for each fixture.
+
+- **`verify` stops at that same directory check instead of packing first.**
+  `verify` defers `patch file` and `client entry` failures to the pack because a
+  `prepack` hook may generate a missing file. It treated a directory at the
+  declared path as generatable too, so it packed and failed with `the tarball
+  does not contain bundle` — a message that sends the author to the `files` list
+  instead of the declaration that is actually wrong. Only an absent path is
+  deferred now (`ENOENT`/`ENOTDIR`); a directory, an unreadable path, or a
+  `client declaration` whose export is already a directory stops at `doctor`
+  with the same sentence. `test/doctor-verify-agreement.test.mjs` spawns both
+  commands on all six fixtures and requires exit `1` with the same
+  `is a directory, not a regular file` line and no `pack:` failure; the
+  unmodified `init` scaffold must still exit `0` from both commands.
+
+## 0.20.50
+
+- **`audit --home` reports a profile whose `package.json` does not parse
+  instead of calling the profile empty.** `readProfileBundles` caught the
+  `JSON.parse` failure and returned an empty `dsh.profile.bundles` list, so a
+  truncated profile looked like one that declares no plugins. When the only
+  declared plugin's own manifest was also unreadable, the scan found nothing and
+  printed "no plugins installed in any profile" with exit `0`, hiding both the
+  plugin and the damaged profile. The profile reader now carries the read or
+  parse failure, `listInstalled` emits an `unreadable profile` row, and
+  `audit` prints a `profile manifest` failure naming the exact `package.json`
+  and the parse error before exiting `1`. A valid plugin in the same profile is
+  still listed, and an empty or valid profile keeps its exit-`0` control.
+  `test/audit-home-unreadable-profile.test.mjs` pins the truncated profile with
+  a hidden declared plugin at the shipped-CLI boundary, the parse error and
+  profile row at the library boundary, and the controls that keep the finding
+  narrow: a BOM profile with a healthy plugin still exits `0` with its row, an
+  empty home still exits `0` with the empty-profile line, and an undeclared
+  malformed dependency still contributes no row.
+
+- **The truncated-profile finding is pinned against the installed tarball.**
+  The earlier test spawned the checkout's `bin/dsh-plugin.mjs`, which is not the
+  file npm installs, so a tarball that omitted the audit fix could still pass.
+  A new test packs this package, installs the tarball into a temp prefix, and
+  spawns the installed CLI three times on the truncated-profile fixture and
+  three times on the clean control. All 3/3 damaged runs must exit `1`, name the
+  profile `package.json`, and print `unreadable profile` with the parse failure;
+  all 3/3 controls must exit `0` with the `clean-plugin` row and no
+  empty-profile line. `test/audit-home-unreadable-profile-tarball.test.mjs`
+  asserts the fixtures' parse state first, so a damaged profile that starts
+  parsing or a control that stops parsing fails before the shipped runs.
 
 - **`audit --remote --host` reads partial ranges the way npm does, so a
   malformed `engines.dsh` cannot be reported compatible.** `engines.dsh:
@@ -11,6 +70,19 @@
   the suffix. `test/audit-host-partial-version.test.mjs` pins the malformed
   build case and both wildcard forms at the CLI and in the parser, beside the
   compatible and next-major controls.
+
+- **A host-aimed repair no longer writes an alternation branch that the
+  next-major ceiling empties.** For `engines.dsh: ">=0.2.0 <2.0.0 || >=2.0.0"`,
+  `--host 1.5.0` appended `<2.0.0` to both branches, producing
+  `>=0.2.0 <2.0.0 || >=2.0.0 <2.0.0`; the second alternative matches nothing.
+  The planner now drops a capped branch whose floor is already the ceiling, so
+  the same repair writes `>=0.2.0 <2.0.0` and keeps the declared 0.2.x floor.
+  `test/fix-host.test.mjs` pins the local write and the remote plan, and
+  `test/fix-remote-host-shipped.test.mjs` saves the planned patch from the
+  shipped CLI, applies it with `git apply`, and asserts the written range
+  accepts `1.5.0` and rejects `2.0.0`.
+
+## 0.20.49
 
 - **`verify` reads npm's tarball answer even when `prepack` prints to stdout.**
   `npm pack --json` runs the hook before writing its JSON, so an `init`

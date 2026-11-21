@@ -1,0 +1,17 @@
+{
+  "name": "patch-directory",
+  "version": "1.0.0",
+  "description": "dsh.bundle.patch names a directory that exists",
+  "files": [
+    "bundle",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "bundle"
+    }
+  }
+}

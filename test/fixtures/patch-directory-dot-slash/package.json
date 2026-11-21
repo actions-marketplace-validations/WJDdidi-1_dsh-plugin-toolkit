@@ -1,0 +1,17 @@
+{
+  "name": "patch-directory-dot-slash",
+  "version": "1.0.0",
+  "description": "a leading ./ still names the directory that exists",
+  "files": [
+    "bundle",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./bundle"
+    }
+  }
+}

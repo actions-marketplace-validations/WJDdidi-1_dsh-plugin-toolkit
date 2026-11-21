@@ -239,17 +239,21 @@ If `doctor` also reports `readme`, put the same range text in the README's
 ## patch file
 
 **What it means.** `dsh.bundle.patch` points at the YAML file the host applies
-when it loads the plugin. `doctor` checks that the path exists; if it does not,
-the host has nothing to insert and the plugin never loads.
+when it loads the plugin. `doctor` checks that the path is a regular file; a
+missing path and a directory that happens to have the declared name both leave
+the host with nothing to insert, so the plugin never loads.
 
 **What you see.**
 
 ```text
   ✗ patch file: dsh.bundle.patch points at ./cordis.patch.yml, which does not exist
+  ✗ patch file: dsh.bundle.patch points at ./bundle, which is a directory, not a regular file
 ```
 
 The path after `points at` is the value from `package.json`, relative to the
 plugin root. A leading `./` is fine; the check resolves it the same way.
+`verify` stops at this same check instead of packing: an absent file may be a
+`prepack` job, but a directory is not a file a hook can generate.
 
 **Smallest fix.** Either create the file at the path you declared, or point
 `dsh.bundle.patch` at the file that already exists. A minimal patch file, the
@@ -295,8 +299,13 @@ serves today.
   ✗ client declaration: dsh.client.platform is "node", but the harness serves client bundles on web
   ✗ client declaration: dsh.client is declared but exports has no "./client" bundle, so the host drops the row and the panel cannot appear
   ✗ client declaration: exports["./client"] points at ./dist/client.js, which does not exist
+  ✗ client declaration: exports["./client"] points at ./bundle, which is a directory, not a regular file
   ✗ client declaration: client.js ships but dsh.client is not declared, so the harness never serves the bundle and the panel cannot appear
 ```
+
+A directory is not a bundle. A folder named by `exports["./client"]` is
+reported instead of being accepted because it exists, and `verify` stops at
+that same check rather than packing a tarball that cannot contain it.
 
 The last line names whichever bundle file exists — a conventional `client.js`,
 `lib/client.js`, or `dist/client.js`, or the target of an existing
@@ -347,16 +356,22 @@ package has no client half.
 ## client entry
 
 **What it means.** `dsh.client` is declared, but none of the files `doctor` can
-use as the entry exists. It looks, in order, at `dsh.client.entry`, the target of
-`exports["./client"]`, then `client.js`, `lib/client.js`, and `dist/client.js`.
-This check is about the checkout having a file to serve; the host still reads
-`exports["./client"]`, so keep the declaration and the entry aligned.
+use as the entry is a regular file. It looks, in order, at `dsh.client.entry`,
+the target of `exports["./client"]`, then `client.js`, `lib/client.js`, and
+`dist/client.js`. This check is about the checkout having a file to serve; the
+host still reads `exports["./client"]`, so keep the declaration and the entry
+aligned.
 
 **What you see.**
 
 ```text
   ✗ client entry: dsh.client is declared but none of dist/client.js, client.js, lib/client.js, dist/client.js exists
+  ✗ client entry: dsh.client is declared but bundle is a directory, not a regular file
 ```
+
+A directory at one of those paths does not satisfy the check, even though it
+exists. `verify` stops at this same check instead of waiting for the pack,
+because a hook cannot turn the directory into the entry file.
 
 The list is the paths `doctor` tried, including the one from
 `dsh.client.entry` and the one from `exports["./client"]` when they are set.

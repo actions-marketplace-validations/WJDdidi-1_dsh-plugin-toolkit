@@ -1,0 +1,24 @@
+{
+  "name": "client-export-directory-plain",
+  "version": "1.0.0",
+  "description": "exports['./client'] without ./ still names a directory",
+  "files": [
+    "bundle",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    "./client": "bundle"
+  }
+}

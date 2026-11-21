@@ -1,0 +1,26 @@
+{
+  "name": "client-export-directory-conditions",
+  "version": "1.0.0",
+  "description": "a conditions object still resolves exports['./client'] to a directory",
+  "files": [
+    "bundle",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    "./client": {
+      "default": "./bundle"
+    }
+  }
+}

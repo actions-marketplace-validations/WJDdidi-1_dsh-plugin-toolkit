@@ -109,6 +109,23 @@ test('--host caps every alternation branch instead of dropping the old one', () 
   assert.equal(satisfiesRange(written, '1.0.0'), false, 'the next major is accepted');
 });
 
+test('--host drops an alternation branch that the next-major ceiling empties', () => {
+  const dir = plugin({ dsh: '>=0.2.0 <2.0.0 || >=2.0.0' });
+
+  const result = fixEngines({ dir, host: '1.5.0', write: true });
+
+  assert.equal(result.written, true);
+  // The second branch starts at the ceiling, so `>=2.0.0 <2.0.0` would match
+  // nothing. Keeping it would make the plan claim a supported line the host
+  // cannot use, and every later reader would have to parse an empty range.
+  assert.equal(manifestOf(dir).engines.dsh, '>=0.2.0 <2.0.0');
+  assert.equal(satisfiesRange(result.range, '0.2.0'), true, 'the declared floor was dropped');
+  assert.equal(satisfiesRange(result.range, '1.5.0'), true, 'the host is not accepted');
+  assert.equal(satisfiesRange(result.range, '2.0.0'), false, 'the next major is accepted');
+  assert.equal(satisfiesRange(result.range, '2.5.0'), false, 'the emptied branch is still in the range');
+  assert.match(result.why, /keeping that lower bound/u);
+});
+
 test('--host leaves a range that already accepts the host and excludes the next major', () => {
   const dir = plugin({ dsh: '>=0.2.0 <1.0.0' });
   const before = fs.readFileSync(path.join(dir, 'package.json'), 'utf8');
@@ -247,6 +264,27 @@ test('fix --remote --engines --host keeps a hyphen range’s floor in the plan',
   assert.match(output, /^\+ {4}"dsh": ">=0\.2\.0 <1\.0\.0"$/mu);
   assert.equal(satisfiesRange('>=0.2.0 <1.0.0', '0.3.0'), true);
   assert.equal(satisfiesRange('>=0.2.0 <1.0.0', '1.0.0'), false);
+});
+
+test('fix --remote --engines --host does not print a ceiling-empty branch', async () => {
+  const raw = `${JSON.stringify(
+    { name: 'demo-plugin', version: '1.2.3', engines: { dsh: '>=0.2.0 <2.0.0 || >=2.0.0' } },
+    null,
+    2,
+  )}\n`;
+  const io = recorder();
+
+  const code = await run(['fix', 'demo/plugin', '--remote', '--engines', '--host', '1.5.0'], io, {
+    fetchImpl: github(raw),
+  });
+
+  assert.equal(code, 0);
+  const output = io.lines.join('\n');
+  assert.match(output, /would write engines\.dsh ">=0\.2\.0 <2\.0\.0"/u);
+  assert.doesNotMatch(output, /2\.0\.0 <2\.0\.0/u, 'the plan printed an empty alternation branch');
+  assert.match(output, /^\+ {4}"dsh": ">=0\.2\.0 <2\.0\.0"$/mu);
+  assert.equal(satisfiesRange('>=0.2.0 <2.0.0', '1.5.0'), true);
+  assert.equal(satisfiesRange('>=0.2.0 <2.0.0', '2.0.0'), false);
 });
 
 test('the remote patch keeps a compatible floor in the written manifest', async (t) => {

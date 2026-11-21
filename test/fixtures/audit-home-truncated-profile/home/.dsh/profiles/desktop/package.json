@@ -1,0 +1,4 @@
+{
+  "name": "dsh-profile-desktop",
+  "private": true,
+  "dsh": { "profile": { "bundles": ["ghost-plugin"] }
