@@ -1,3 +1,46 @@
+## 0.20.52
+
+- **The re-inclusion verdict is pinned against the installed tarball.** The
+  earlier test spawned the checkout's `bin/dsh-plugin.mjs`, which is not the
+  file npm installs, so a tarball that omitted the files-list fix could still
+  pass. A new test packs this package, installs the tarball into a temp prefix,
+  and spawns the installed CLI three times on a committed fixture with
+  `["**/*.js", "cordis.patch.yml", "!lib/client.js", "lib/client.js"]`. All 3/3
+  runs must exit `1` with the `files list` line naming `lib/client.js`; the
+  unmodified `init` scaffold from the same installed CLI must still exit `0` on
+  3/3 runs. `test/doctor-files-reinclude-tarball.test.mjs` asserts the fixture
+  is still packed without the client first, so the test cannot pass by no longer
+  reproducing the bug.
+
+- **The files-list check resolves negations through npm's walker instead of a
+  last-match-wins list.** The failing list
+  `["**/*.js", "cordis.patch.yml", "!lib/client.js", "lib/client.js"]` still
+  omits `lib/client.js`, because a root glob does not make npm walk `lib`; the
+  plain control `["lib", "cordis.patch.yml"]` is clean. Around that case the
+  check now also matches npm when a negated subtree (`!lib/**`) stops the walk,
+  when a root glob reaches a nested file only after another entry walks the
+  parent folder, and when a negation is not normalized like its positive
+  spelling (`!./lib/client.js` does not match `lib/client.js`). `npm test` packs
+  the failing list and the plain folder-and-patch control, requires the CLI to
+  exit `1` naming `lib/client.js` and `0` with an `ok` line respectively, and
+  keeps the direct negation and glob cases green.
+
+- **`doctor` no longer calls a plugin clean when a `files` entry re-lists a file
+  after a `!` exclusion npm still omits.** npm treats an entry that names an
+  existing file as a strict rule and applies those strict rules in reverse
+  order, so the first explicit mention decides:
+  `["**/*.js", "cordis.patch.yml", "!lib/client.js", "lib/client.js"]` packs no
+  `lib/client.js`. The files-list check used last-match-wins for every entry,
+  saw the final positive entry, and exited `0` while the installed tarball was
+  missing the client `exports["./client"]` named. Explicit file entries now
+  resolve in npm's order, keeping the top-level folder exception (`lib`,
+  `lib/**`) that lets a later positive entry actually re-include the file. A
+  temp fixture hands that exact list to `npm pack --dry-run --json` and the
+  shipped CLI must exit `1`, name `lib/client.js` in a `files list` line, and
+  print no `ok` line; the folder-entry control must still exit `0`.
+  `test/doctor-files-reinclude.test.mjs` pins both directions, so the prediction
+  cannot drift from the packer.
+
 ## 0.20.51
 
 - **`doctor` requires the patch file and the client bundle to be regular files,

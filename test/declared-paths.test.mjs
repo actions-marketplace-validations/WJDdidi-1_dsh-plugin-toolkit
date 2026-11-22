@@ -75,4 +75,11 @@ test('a negated files entry removes paths the positive entries would ship', () =
   assert.equal(isShipped('lib/nested/secret.js', ['lib', '!lib/nested']), false);
   assert.equal(isShipped('lib/nested/secret.js', ['lib', '!lib/{secret,private}.js']), true);
   assert.equal(isShipped('lib/secret.js', ['lib', '!lib/{secret,private}.js']), false);
+  // npm strips a leading `./` from positive entries, but not from the path
+  // after a `!`. `!./lib/client.js` therefore names no packed path and does
+  // not hide the client a folder entry ships.
+  assert.equal(isShipped('lib/client.js', ['lib', '!./lib/client.js']), true);
+  // A negated subtree also stops the walk, so a later root glob cannot reach
+  // a nested file through it.
+  assert.equal(isShipped('lib/other.js', ['lib/*.js', '!lib/**', '*.js']), false);
 });

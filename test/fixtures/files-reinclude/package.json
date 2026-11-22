@@ -1,0 +1,31 @@
+{
+  "name": "files-negated-reinclude-fixture",
+  "version": "1.0.0",
+  "description": "A files list whose negation precedes an explicit re-inclusion",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "**/*.js",
+    "cordis.patch.yml",
+    "!lib/client.js",
+    "lib/client.js"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "entry": "lib/client.js"
+    }
+  }
+}
