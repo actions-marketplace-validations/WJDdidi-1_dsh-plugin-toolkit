@@ -1,1 +1,4 @@
-- insert: []
+- insert:
+    - id: npmignore-client
+      name: npmignore-client
+      config: {}

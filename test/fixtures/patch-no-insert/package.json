@@ -1,0 +1,25 @@
+{
+  "name": "patch-no-insert",
+  "version": "1.0.0",
+  "description": "A patch-no-insert fixture for the patch file check",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "exports": {
+    ".": "./index.js"
+  }
+}

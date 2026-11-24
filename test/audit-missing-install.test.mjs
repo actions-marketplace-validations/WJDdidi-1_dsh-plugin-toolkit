@@ -34,7 +34,7 @@ function goodManifest(name) {
 
 const goodFiles = {
   'README.md': '# demo\n\n## Requirements\n\n| Harness |\n| --- |\n| `>=0.2.0` |\n',
-  'cordis.patch.yml': '- insert: []\n',
+  'cordis.patch.yml': '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n',
   'index.js': 'export function apply() {}\n',
   'client.js': 'window.__ModuleLoader__.load({ id: "x", factory: () => ({}) });\n',
 };

@@ -1,0 +1,4 @@
+- insert:
+    - id: always-included-copying-fixture
+      name: always-included-copying-fixture
+      config: {}

@@ -43,7 +43,7 @@ function files(range) {
       files: ['index.js', 'cordis.patch.yml', 'README.md'],
     }),
     'README.md': `# compat\n\n## Requirements\n\n| DSH | ${range} |\n`,
-    'cordis.patch.yml': '- insert: []\n',
+    'cordis.patch.yml': '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n',
     'index.js': 'export function apply() {}\n',
   };
 }

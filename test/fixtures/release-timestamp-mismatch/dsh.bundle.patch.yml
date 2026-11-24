@@ -1,1 +1,4 @@
-plugins: []
+- insert:
+    - id: demo-plugin
+      name: demo-plugin
+      config: {}

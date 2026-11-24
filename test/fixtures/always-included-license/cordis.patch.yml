@@ -1,0 +1,4 @@
+- insert:
+    - id: always-included-license-fixture
+      name: always-included-license-fixture
+      config: {}

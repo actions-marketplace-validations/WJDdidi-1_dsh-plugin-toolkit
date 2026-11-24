@@ -1,1 +1,4 @@
-- insert: []
+- insert:
+    - id: client-export-directory
+      name: client-export-directory
+      config: {}

@@ -69,7 +69,7 @@ function writeFixture(root, name, { files = DEFAULT_FILES, ignore, ignoreDirecto
   };
   fs.writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   fs.writeFileSync(path.join(dir, 'index.js'), 'export function apply() {}\n');
-  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(
     path.join(dir, 'README.md'),
     `# ${name}\n\n## Requirements\n\n- DeepSeek Harness \`>=0.2.0\`\n`,

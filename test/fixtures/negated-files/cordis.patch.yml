@@ -1,1 +1,4 @@
-- insert: []
+- insert:
+    - id: negated-files
+      name: negated-files
+      config: {}

@@ -111,7 +111,7 @@ test('--market writes the entry into another repository, and opens the PR there'
     dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web' } },
   }, null, 2));
   fs.writeFileSync(path.join(plugin, 'README.md'), '# demo\n\n## Requirements\n\n| Harness |\n| --- |\n| `>=0.2.0` |\n');
-  fs.writeFileSync(path.join(plugin, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(plugin, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(path.join(plugin, 'index.js'), 'export function apply() {}\n');
   fs.writeFileSync(path.join(plugin, 'client.js'), 'window.__ModuleLoader__.load({ id: "x", factory: () => ({}) });\n');
 
@@ -174,7 +174,7 @@ test('--publish runs the publish here, for repositories without a publish workfl
     dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web' } },
   }, null, 2));
   fs.writeFileSync(path.join(plugin, 'README.md'), '# demo\n\n## Requirements\n\n| Harness |\n| --- |\n| `>=0.2.0` |\n');
-  fs.writeFileSync(path.join(plugin, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(plugin, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(path.join(plugin, 'index.js'), 'export function apply() {}\n');
   fs.writeFileSync(path.join(plugin, 'client.js'), 'window.__ModuleLoader__.load({ id: "x", factory: () => ({}) });\n');
 

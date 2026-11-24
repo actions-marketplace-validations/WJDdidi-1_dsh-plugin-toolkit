@@ -25,7 +25,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(ROOT, 'bin', 'dsh-plugin.mjs');
 const REPO = 'demo/plugin';
 const README = '# demo\n\n## Requirements\n\nRequires dsh >=0.2.0.\n';
-const PATCH = '- insert: []\n';
+const PATCH = '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n';
 const INDEX = 'export function apply() {}\n';
 
 /**

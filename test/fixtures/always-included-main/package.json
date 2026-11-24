@@ -1,0 +1,21 @@
+{
+  "name": "always-included-main-fixture",
+  "version": "1.0.0",
+  "description": "A plugin whose main file is omitted from files",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "README.md",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

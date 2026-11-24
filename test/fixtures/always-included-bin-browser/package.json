@@ -1,0 +1,29 @@
+{
+  "name": "always-included-bin-browser-fixture",
+  "version": "1.0.0",
+  "description": "A plugin that exports its bin and browser files while omitting them from files",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "browser": "browser.js",
+  "bin": {
+    "always-included-bin-browser-fixture": "./bin/cli.mjs"
+  },
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./cli": "./bin/cli.mjs",
+    "./browser": "./browser.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

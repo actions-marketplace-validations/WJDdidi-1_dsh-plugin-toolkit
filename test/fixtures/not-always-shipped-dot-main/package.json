@@ -1,0 +1,23 @@
+{
+  "name": "not-always-shipped-dot-main-fixture",
+  "version": "1.0.0",
+  "description": "A plugin whose main is written ./index.js, which npm does not add to the tarball as-is",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "./index.js",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "exports": {
+    "./entry": "./index.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

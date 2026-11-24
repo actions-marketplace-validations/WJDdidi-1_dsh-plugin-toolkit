@@ -239,21 +239,36 @@ If `doctor` also reports `readme`, put the same range text in the README's
 ## patch file
 
 **What it means.** `dsh.bundle.patch` points at the YAML file the host applies
-when it loads the plugin. `doctor` checks that the path is a regular file; a
-missing path and a directory that happens to have the declared name both leave
-the host with nothing to insert, so the plugin never loads.
+when it loads the plugin. `doctor` checks that the path is a regular file and
+that the file has a top-level loader row whose `insert` list contains at least
+one mapping that names a row. A missing path, a directory that happens to have
+the declared name, an empty file, and a file with no usable `insert` row all
+leave the host with nothing to insert, so the plugin never loads.
 
 **What you see.**
 
 ```text
   ✗ patch file: dsh.bundle.patch points at ./cordis.patch.yml, which does not exist
   ✗ patch file: dsh.bundle.patch points at ./bundle, which is a directory, not a regular file
+  ✗ patch file: dsh.bundle.patch points at ./cordis.patch.yml, which has no insert row the host can apply, so the plugin never mounts
 ```
 
-The path after `points at` is the value from `package.json`, relative to the
-plugin root. A leading `./` is fine; the check resolves it the same way.
-`verify` stops at this same check instead of packing: an absent file may be a
-`prepack` job, but a directory is not a file a hook can generate.
+The last line covers an empty patch, a mapping such as `foo: bar`,
+`- insert: []`, and entries that do not name a row: `- insert: [{}]`,
+`- insert: [null]` and `- insert: [false]`. The entry must be a mapping with a
+non-empty `name:`. The path after `points at` is the value from `package.json`,
+relative to the plugin root. A leading `./` is fine; the check resolves it the
+same way. `verify` stops at this same check instead of packing: an absent file
+may be a `prepack` job, but an existing directory or a patch with no insert row
+is already the declared file, so it is reported at the doctor stage rather than
+packing to see whether a hook rewrites it. The rejection is also pinned from the
+installed tarball: the suite packs and installs this toolkit, then runs the
+installed `doctor` and `verify --no-mount` once on each of the empty,
+`foo: bar`, `- insert: []`, `- insert: [{}]`, `- insert: [null]` and
+`- insert: [false]` fixtures and requires the same `patch file` failure, while
+both valid `- insert:` controls stay clean. The three unnameable shapes have
+their own installed-tarball test too: `doctor` must reject 3/3 and
+`verify --no-mount` 3/3, so it prints and requires `false_greens=0/6`.
 
 **Smallest fix.** Either create the file at the path you declared, or point
 `dsh.bundle.patch` at the file that already exists. A minimal patch file, the
@@ -561,10 +576,19 @@ scaffold stays clean.
 ```
 
 The second line names every path that is missing, separated by commas. npm always
-adds `package.json`, the README, the license, the changelog, and the `main` file
-to the `files` allowlist, so `doctor` does not ask for those; everything else
-has to be listed. A subdirectory ignore file can still remove one of them from
-the tarball, and that is reported the same way.
+adds `package.json`, the README, COPYING, the license, `main`, `browser`, and
+every `bin` target to the `files` allowlist, so `doctor` does not ask for those;
+everything else has to be listed. Each of the five root declarations has its own
+committed fixture in `test/doctor-always-included-paths.test.mjs`, pinned to
+both the installed CLI and `npm pack --dry-run --json` for five trials, so no
+single name can quietly stop being treated as always shipped. `main` and
+`browser` are matched as written:
+`./index.js` is not the tarball path `index.js`, so npm drops it and `doctor`
+asks for the entry. A `bin` target is normalised, so `./bin/cli.mjs` is still
+always shipped. A changelog is not on the list: npm drops a `CHANGELOG*` file the
+`files` list omits, so exporting one needs an explicit entry. A subdirectory
+ignore file can still remove an always-included file from the tarball, and that
+is reported the same way.
 
 **Smallest fix.** Add the missing path, or its parent folder, to `files`:
 

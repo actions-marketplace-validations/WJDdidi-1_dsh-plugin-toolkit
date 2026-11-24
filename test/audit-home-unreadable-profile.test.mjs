@@ -77,7 +77,7 @@ function goodPlugin(dir, name) {
     path.join(plugin, 'client.js'),
     'window.__ModuleLoader__.load({ id: "x", factory: () => ({}) });\n',
   );
-  fs.writeFileSync(path.join(plugin, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(plugin, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(path.join(plugin, 'README.md'), '# demo\n\n## Requirements\n\n`>=0.2.0`\n');
   return plugin;
 }

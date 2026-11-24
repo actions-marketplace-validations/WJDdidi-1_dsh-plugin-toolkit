@@ -1,0 +1,4 @@
+- insert:
+    - id: always-included-main-fixture
+      name: always-included-main-fixture
+      config: {}

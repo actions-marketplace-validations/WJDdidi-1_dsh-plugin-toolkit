@@ -1,1 +1,4 @@
-- insert: []
+- insert:
+    - id: readme-plain
+      name: readme-plain
+      config: {}

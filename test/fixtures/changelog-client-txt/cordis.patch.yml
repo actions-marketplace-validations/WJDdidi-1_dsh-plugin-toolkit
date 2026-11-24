@@ -1,0 +1,4 @@
+- insert:
+    - id: changelog-client-txt-fixture
+      name: changelog-client-txt-fixture
+      config: {}

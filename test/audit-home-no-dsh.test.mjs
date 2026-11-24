@@ -111,7 +111,7 @@ test('a declared bundle with a dsh field is the healthy control and exits 0', (t
     },
     {
       'index.js': 'export function apply() {}\n',
-      'cordis.patch.yml': '- insert: []\n',
+      'cordis.patch.yml': '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n',
       'README.md': '# good-bundle\n\n## Requirements\n\n`>=0.2.0`\n',
     },
   );

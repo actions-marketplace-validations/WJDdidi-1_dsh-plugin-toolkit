@@ -93,7 +93,7 @@ function writeFixture(root, fixture) {
   };
   fs.writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   fs.writeFileSync(path.join(dir, 'index.js'), 'export function apply() {}\n');
-  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(path.join(dir, 'README.md'), `# ${fixture.name}\n\n## Requirements\n\n- DeepSeek Harness \`>=0.2.0\`\n`);
   for (const file of fixture.onDisk) {
     fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });

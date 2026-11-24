@@ -1,0 +1,27 @@
+{
+  "name": "always-included-client-fixture",
+  "version": "1.0.0",
+  "description": "A plugin that declares the files npm always adds while omitting them from files",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./readme": "./README.md",
+    "./license": "./LICENSE",
+    "./copying": "./COPYING",
+    "./manifest": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

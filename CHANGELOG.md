@@ -1,3 +1,97 @@
+## 0.21.2
+
+- **The three unnameable insert shapes are pinned from the installed tarball.**
+  `test/doctor-patch-insert-tarball.test.mjs` packs this package, installs the
+  tarball into a temp prefix, and runs the installed `doctor` once on each of
+  the `- insert: [{}]`, `[null]` and `[false]` fixtures and the installed
+  `verify --no-mount` once on each of the same three. All six runs must exit
+  `1` with the `patch file` line naming `cordis.patch.yml`, so the test prints
+  and requires `false_greens=0/6`; the inline
+  `- insert: [{ id: x, name: x, config: {} }]` control still exits `0` from both
+  commands. A tarball that omits the row check or a module it needs can no
+  longer pass the suite and ship the 0.21.1 false green.
+
+- **`doctor` and `verify --no-mount` reject insert entries that name no loader
+  row.** The patch check treated any non-empty `- insert:` list as mountable, so
+  `- insert: [{}]`, `- insert: [null]` and `- insert: [false]` passed even though
+  the loader had no row to apply. Each entry now has to be a mapping with a
+  non-empty `name:`; an empty mapping, a boolean and a null are rejected with
+  the same `patch file` sentence that names `cordis.patch.yml`. The inline
+  `- insert: [{ id: x, name: x, config: {} }]` control still exits `0`.
+  `test/doctor-patch-shape.test.mjs` adds committed fixtures for the three
+  shapes and runs both commands on them; the installed-tarball test now requires
+  all 6/6 malformed fixtures to exit `1` and both valid controls to stay clean
+  2/2.
+
+## 0.21.1
+
+- **`doctor` now matches npm's full always-included set.** Besides
+  `package.json`, README, COPYING, LICENSE and `main`, npm-packlist also adds
+  `browser` and every `bin` target to the tarball whatever `files` says.
+  `doctor` only knew `main`, so a plugin that published a `bin` executable and
+  also exported that path was told to list it even though `npm pack` had already
+  included it. The set now covers `browser` and object- or string-shaped `bin`
+  targets. It also stops normalising `main` and `browser`: npm writes those
+  strict rules verbatim, so a `./index.js` main is not the tarball path
+  `index.js`, and `npm pack` drops it when `files` omits it. `doctor` now
+  reports that omission instead of printing `ok`. A `bin` target is normalised
+  by npm, so `./bin/cli.mjs` stays always-shipped.
+  `test/doctor-always-shipped-bin-browser.test.mjs` packs a committed fixture
+  whose bin and browser exports are absent from `files`, confirms npm ships
+  both, and requires the installed CLI to keep it clean; a second fixture with
+  `main: "./index.js"` must have `index.js` dropped by npm and be rejected by
+  the installed CLI.
+
+- **`doctor` no longer treats a changelog as an always-shipped client.** npm's
+  always-included set is `package.json`, README, COPYING, LICENSE, `main`,
+  `browser` and the `bin` targets; it does not add a `CHANGELOG*`. `doctor`
+  listed `CHANGELOG*` anyway, so a plugin whose `exports["./client"]` named
+  `CHANGELOG`, `CHANGELOG.md` or `CHANGELOG.txt` but whose `files` list omitted
+  it printed `ok` while `npm pack` dropped the client. The set now matches
+  npm-packlist (including COPYING and README/LICENSE suffixes), and a changelog
+  has to be listed. `test/doctor-changelog-always-shipped.test.mjs` packs the
+  three failing fixtures and a listed control, installs this toolkit's tarball,
+  and requires the installed CLI to reject the omitted clients 3/3 while the
+  control stays clean; a fifth fixture declares README, LICENSE, COPYING,
+  package.json and `main` while omitting them from `files`, and must stay clean
+  in 5/5 runs with all five present in `npm pack --dry-run --json`.
+  `test/doctor-always-included-paths.test.mjs` isolates those five declarations
+  in separate committed fixtures, so each path has to stay clean 5/5 from the
+  installed CLI while `npm pack --dry-run --json` ships it 5/5 on its own.
+
+## 0.21.0
+
+- **The patch-shape rejection is pinned against the installed tarball.** The
+  earlier test spawned the checkout's `bin/dsh-plugin.mjs`, which is not the
+  file npm installs, so a tarball that omitted the patch-shape fix or a module
+  it needs could still pass and ship the false clean. A new test packs this
+  package, installs the tarball into a temp prefix, and spawns the installed CLI
+  with `doctor` and `verify --no-mount` once per committed fixture. The empty
+  file, `foo: bar` mapping and `- insert: []` list must all be rejected 3/3 with
+  the `patch file` line naming `cordis.patch.yml`; the valid `- insert:` control
+  must stay clean 1/1 on both commands.
+  `test/doctor-patch-shape-tarball.test.mjs` also asserts the fixtures still
+  carry the shapes they name and that the tarball ships the CLI, doctor and
+  verify code, so it cannot pass without reproducing the bug.
+
+- **`doctor` and `verify --no-mount` reject a patch file that cannot insert a
+  loader row.** `checkPatchFile` used to stop after proving the declared path
+  was a regular file, so a plugin whose `cordis.patch.yml` was empty, was a
+  mapping such as `foo: bar`, or contained `- insert: []` printed `ok` while the
+  host had nothing to mount. The check now reads the file and requires one
+  top-level `- insert:` row with at least one entry; comments, an inline list,
+  an indentless sequence and multiple rows still parse, and an existing file
+  with no usable row stops `verify` at `doctor` instead of packing a declared
+  file that already says there is nothing to insert. `doctor --fix` now tells
+  the author to add a row when the file exists, instead of telling them to
+  create it.
+  `test/doctor-patch-shape.test.mjs` runs the shipped CLI on empty, no-insert
+  and `- insert: []` fixtures, requiring exit `1`, a `patch file` line naming
+  `cordis.patch.yml`, and no `pack:` failure from `verify --no-mount`; the
+  valid `- insert:` fixture must still exit `0` from both. Existing test
+  fixtures that used `- insert: []` only as a placeholder now carry a real row,
+  so they keep testing their own check rather than this one.
+
 ## 0.20.52
 
 - **The re-inclusion verdict is pinned against the installed tarball.** The

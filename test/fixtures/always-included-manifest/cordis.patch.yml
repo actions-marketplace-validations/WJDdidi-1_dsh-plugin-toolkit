@@ -1,0 +1,4 @@
+- insert:
+    - id: always-included-manifest-fixture
+      name: always-included-manifest-fixture
+      config: {}

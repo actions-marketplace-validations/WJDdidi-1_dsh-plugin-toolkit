@@ -38,7 +38,7 @@ function github(files) {
 const plugin = {
   'package.json': JSON.stringify(manifest()),
   'index.js': 'export function apply() {}\n',
-  'cordis.patch.yml': '- insert: []\n',
+  'cordis.patch.yml': '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n',
   'README.md': '# demo\n\n## Requirements\n\nRequires dsh >=0.2.0.\n',
 };
 

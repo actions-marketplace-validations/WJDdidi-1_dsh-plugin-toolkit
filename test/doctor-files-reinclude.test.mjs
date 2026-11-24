@@ -43,7 +43,7 @@ function writeFixture(root, files) {
   fs.writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   fs.writeFileSync(path.join(dir, 'index.js'), 'export function apply() {}\n');
   fs.writeFileSync(path.join(dir, 'lib', 'client.js'), 'export default 1;\n');
-  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(
     path.join(dir, 'README.md'),
     '# files-negated-reinclude-fixture\n\n## Requirements\n\n- DeepSeek Harness `>=0.2.0`\n',

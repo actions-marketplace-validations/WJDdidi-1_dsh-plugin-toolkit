@@ -1,1 +1,4 @@
-- insert: []
+- insert:
+    - id: readme-bom
+      name: readme-bom
+      config: {}

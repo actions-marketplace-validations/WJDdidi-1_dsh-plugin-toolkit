@@ -50,7 +50,7 @@ function writePlugin(dir) {
     path.join(dir, 'client.js'),
     'window.__ModuleLoader__.load({ id: "x", factory: () => ({}) });\n',
   );
-  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(path.join(dir, 'README.md'), '# demo\n\n## Requirements\n\n`>=0.2.0`\n');
 }
 

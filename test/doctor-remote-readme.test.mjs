@@ -35,7 +35,7 @@ function manifest(extra = {}) {
 const support = {
   'package.json': JSON.stringify(manifest()),
   'index.js': 'export function apply() {}\n',
-  'cordis.patch.yml': '- insert: []\n',
+  'cordis.patch.yml': '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n',
 };
 
 function preload(t) {

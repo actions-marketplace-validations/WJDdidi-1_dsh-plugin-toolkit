@@ -149,7 +149,7 @@ test('a release with --pr stops at the pull request, and with --merge goes to me
     dsh: { bundle: { patch: './cordis.patch.yml' }, client: { platform: 'web' } },
   }, null, 2));
   fs.writeFileSync(path.join(dir, 'README.md'), '# demo\n\n## Requirements\n\n| Harness |\n| --- |\n| `>=0.2.0` |\n');
-  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert: []\n');
+  fs.writeFileSync(path.join(dir, 'cordis.patch.yml'), '- insert:\n    - id: test-plugin\n      name: test-plugin\n      config: {}\n');
   fs.writeFileSync(path.join(dir, 'index.js'), 'export function apply() {}\n');
   fs.writeFileSync(path.join(dir, 'client.js'), 'window.__ModuleLoader__.load({ id: "x", factory: () => ({}) });\n');
   fs.mkdirSync(path.join(dir, 'market'));

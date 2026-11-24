@@ -1,0 +1,4 @@
+- insert:
+    - id: always-included-client-fixture
+      name: always-included-client-fixture
+      config: {}

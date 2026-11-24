@@ -1,1 +1,4 @@
-plugins: []
+- insert:
+    - id: clean-plugin
+      name: clean-plugin
+      config: {}

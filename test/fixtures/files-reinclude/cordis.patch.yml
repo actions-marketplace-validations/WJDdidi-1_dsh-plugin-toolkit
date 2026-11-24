@@ -1,1 +1,4 @@
-- insert: []
+- insert:
+    - id: files-reinclude
+      name: files-reinclude
+      config: {}

@@ -1,0 +1,29 @@
+{
+  "name": "changelog-client-fixture",
+  "version": "1.0.0",
+  "description": "A plugin whose client export is CHANGELOG.md, which npm does not always ship",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./CHANGELOG.md"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

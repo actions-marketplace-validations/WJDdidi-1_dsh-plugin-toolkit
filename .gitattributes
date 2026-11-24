@@ -1,0 +1,4 @@
+# Keep fixture bytes identical on every checkout. Tests read these files and
+# assert their exact patch shape; a Windows autocrlf checkout would otherwise
+# turn the committed LF endings into CRLF and fail the byte comparison.
+test/fixtures/** text eol=lf
