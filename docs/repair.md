@@ -270,6 +270,14 @@ both valid `- insert:` controls stay clean. The three unnameable shapes have
 their own installed-tarball test too: `doctor` must reject 3/3 and
 `verify --no-mount` 3/3, so it prints and requires `false_greens=0/6`.
 
+The same check reads the file over the GitHub API. `doctor --remote` and
+`audit --remote` reject an empty patch, `foo: bar` and `- insert: []` with the
+sentence above instead of printing `ok`, and
+`test/doctor-remote-patch-shape.test.mjs` compares each remote sentence with the
+local `doctor()` one while keeping block, indentless and inline valid `- insert:`
+bodies clean. A batch keeps the finding in every row and `--json` object too, so
+`audit --remote --from` cannot count one of those repositories clean.
+
 **Smallest fix.** Either create the file at the path you declared, or point
 `dsh.bundle.patch` at the file that already exists. A minimal patch file, the
 same shape `init` writes, is:

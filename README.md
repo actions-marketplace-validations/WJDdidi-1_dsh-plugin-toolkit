@@ -349,6 +349,10 @@ naming the file and the parse error, and exits `1`. It does not quietly treat
 the profile as one that declares no bundles, so a damaged profile cannot hide
 the plugin it declares behind "no plugins installed in any profile". Any valid
 plugin still installed in that profile is listed beside the profile finding.
+A present `dsh.profile.bundles` value that is not a list of plugin names — a
+string, an object, or an array entry that is not a non-empty string such as
+`[42]` — gets the same row and exit `1`, so a malformed list is not mistaken
+for a profile that declares no bundles.
 
 A declared bundle can also parse but carry no `dsh` field at all. The profile
 says the loader will mount it, so `audit` prints a `no dsh field` row with a
@@ -463,6 +467,11 @@ What it can see, and what it cannot:
   a `Requirements` heading and must state the host range `package.json`
   declares. A repository whose checkout fails `readme` fails the remote check
   too, with the same sentence.
+- Patch checks (`patch file`) read the declared `cordis.patch.yml` over the
+  API. It needs a top-level `- insert:` row whose entry names a loader row, so
+  an empty file, a mapping such as `foo: bar`, and `- insert: []` fail with the
+  same `no insert row the host can apply` sentence a checkout prints instead of
+  counting the repository clean.
 - File checks (does `exports["./client"]` point at a file that exists, does the
   root export `apply`) need the tree. npm runs `prepack` and `prepare` before
   `npm pack` creates the tarball, and `prepublishOnly` before `npm publish`
@@ -487,6 +496,12 @@ at a time, the timing the command had before batching. The output — and the
 `--json` array — still follows the input list, and every verdict is the one the
 sequential run produced, so a diff between two runs compares repositories rather
 than scheduling.
+
+The batch keeps the same `patch file` finding as a single repository. Three
+malformed and three valid repositories print `3 clean, 3 failing (3 problems)`
+and exit `1`, and each malformed repository's `--json` object carries the
+`patch file` failure, so a batched repair sweep cannot count an unmountable
+repository clean.
 
 When GitHub answers `403` or `429`, the shared quota is gone, so the batch stops
 starting new repositories and marks every entry it could not read as
@@ -804,7 +819,7 @@ The `root export` check is a source check, not an install. `doctor` resolves the
 
 `verify --no-mount` does not reopen the path `doctor` read. It imports the installed package by its bare name, the way the loader does, so Node's `exports` resolution decides. An `exports` map with no `.` entry therefore fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` even when `main` names a working file, and `verify` reports a `root export` failure naming the missing `.` export instead of passing. `verify --no-mount` still runs the manifest and root-export checks before packing, so a root the source check already rejects stops at that same check instead of packing. An *absent* file that a `prepack` hook can generate — a missing `patch file`, `client entry` or `client declaration` export, and a `files` list that names a path not yet on disk — waits until after `npm pack` has run, because the tarball contains what that hook wrote even though the folder did not. A path that already exists as a directory, or cannot be read, is not a file a hook can generate: `verify` stops at `doctor` with the same sentence and does not pack. An existing patch file with no usable insert row is already written, so `verify --no-mount` reports it at that same `patch file` check instead of packing to see whether a hook rewrites it. If those files are still missing after the pack, `verify` reports the same `doctor` checks. It runs that post-pack pass even when the first was clean, so a hook that writes a `client.js` nothing declares is rejected instead of shipping a panel the host never serves. `npm test` spawns the shipped CLI for both commands on the comment-only fixtures and the missing-file, missing-conditions-file, string-root missing-file and directory fixtures, requires every one to exit `1` with a `root export:` line and no raw `EISDIR`, and requires `verify` to report `stopped at doctor` rather than a `pack:` failure. It also spawns both commands on the six declared-path directory fixtures, requiring the same `is a directory, not a regular file` line and no `pack:` failure, and requires the unmodified scaffold to pass both commands. The empty, `foo: bar`, `- insert: []`, `- insert: [{}]`, `- insert: [null]` and `- insert: [false]` patch fixtures must exit `1` from both commands with a `patch file` line naming `cordis.patch.yml`, while both valid `- insert:` controls exit `0` from both.
 
-Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged. `doctor --remote` and `audit --remote` run the same manifest and README checks (`name`, `version`, `engines.dsh`, `dsh field`, `files list`, `readme`) against the `package.json` and README GitHub serves, then check the files the manifest points at, so a bad package name or a README with no Requirements heading is reported before a clone or install. The `name` check is pinned at the process boundary: `npm test` expects the shipped CLI to reject a missing, empty and malformed name (`accepted=0/3`) and to accept a valid plain or scoped control.
+Exit code is `0` when the plugin can be installed and `1` when it cannot, so it drops into CI unchanged. `doctor --remote` and `audit --remote` run the same manifest and README checks (`name`, `version`, `engines.dsh`, `dsh field`, `files list`, `readme`) against the `package.json` and README GitHub serves, read the declared patch body for a usable `- insert:` row, then check the files the manifest points at, so a bad package name or a README with no Requirements heading is reported before a clone or install. The `name` check is pinned at the process boundary: `npm test` expects the shipped CLI to reject a missing, empty and malformed name (`accepted=0/3`) and to accept a valid plain or scoped control.
 
 ## Repair what `doctor` finds
 
@@ -1114,7 +1129,7 @@ The install reports success and nothing shows up. In this order:
 
 `release` runs the sequence in the order that fails cheapest first:
 
-1. Preflight (`doctor`) — stop before tagging anything.
+1. Preflight (`doctor`, then the same read/shape/`engines.dsh` check as `index` on the file the release would patch) — stop before tagging anything.
 2. Refuse to run on a dirty tree. If the tag already exists and points at the current commit, reuse it, push it again, and resume; if it points somewhere else, stop with the tag's commit and HEAD, and print the `git tag -d` / `git push --delete` recovery.
 3. Create and push the tag, which starts the plugin's release workflow. A retry pushes an existing local tag too, so a tag left behind by a failed `git push` still reaches origin.
 4. Poll the registry until it actually serves that version, reporting each wait.
@@ -1133,7 +1148,7 @@ checks settled after 1s (1 look(s))
 merged
 ```
 
-Without `--pr` it prints the `git add` / `gh pr create` commands instead of running them; `--dry-run` prints the whole sequence before anything happens. A re-run after a failure is safe: when the tag already points at HEAD it is reused rather than recreated, it is pushed again so a local-only tag left by a failed push reaches origin, the release continues with the registry wait, and the same version with the same publish time is a no-op once the index entry is committed. A no-op release prints `<index> already carried <version>; nothing to commit`, exits `0`, leaves `git log -1` unchanged, and creates no `market/<version>` branch, even when `--pr` or `--merge` is passed. A different publish time is not a no-op: the release stops at `index`, names the indexed and registry timestamps in the error, exits `1`, and creates no `market/<version>` branch.
+Without `--pr` it prints the `git add` / `gh pr create` commands instead of running them; `--dry-run` prints the whole sequence before anything happens. Both the dry run and the real release run the same read/shape/`engines.dsh` check as `index` on the file they would patch (including `--market` and `--index`) before any tag is created or listed: if that file exists and `index` would reject it, the command prints the same finding, exits `1`, and no tag is listed or created. A checkout with no index still plans and runs its release. A re-run after a failure is safe: when the tag already points at HEAD it is reused rather than recreated, it is pushed again so a local-only tag left by a failed push reaches origin, the release continues with the registry wait, and the same version with the same publish time is a no-op once the index entry is committed. A no-op release prints `<index> already carried <version>; nothing to commit`, exits `0`, leaves `git log -1` unchanged, and creates no `market/<version>` branch, even when `--pr` or `--merge` is passed. A different publish time is not a no-op: the release stops at `index`, names the indexed and registry timestamps in the error, exits `1`, and creates no `market/<version>` branch.
 
 If that tag points at another commit, the release does not move it. It exits `1`
 and names the tag, the commit it points at, HEAD, and the recovery:

@@ -1,3 +1,92 @@
+## 0.22.1
+
+- **The malformed-`dsh.profile.bundles` verdict is pinned at the
+  installed-tarball boundary.** The earlier test spawned the checkout's
+  `bin/dsh-plugin.mjs`, which is not the file npm installs, so a tarball that
+  omitted the profile fix or a module it needs could still pass the suite and
+  ship the false clean. `test/audit-home-malformed-bundles-tarball.test.mjs`
+  now packs this package, installs the tarball into a temp prefix, and runs the
+  installed `audit --home` once on each malformed profile shape (a string, an
+  object, and `[42]`) and once on the valid `["ghost-plugin"]` control. Every
+  malformed run must exit `1`, name the profile `package.json`, and print the
+  `profile manifest` finding, so the test requires `false_cleans=0/3`; the
+  control must still report the declared but absent install as a `missing` row
+  and exit `1`, so it requires `control_exit1=1/1`. Against the published
+  0.22.0 tarball the same test records `false_cleans=3/3`.
+
+- **`audit --home` treats a malformed `dsh.profile.bundles` value as an
+  unreadable profile, not an empty one.** The profile reader returned `[]` for
+  any value that was not an array and for arrays whose entries were not
+  strings, so a profile saved with `"bundles": "ghost-plugin"`, `"bundles":
+  {"ghost-plugin": true}` or `"bundles": [42]` scanned as a profile with no
+  plugins: the command printed "no plugins installed in any profile" and exited
+  `0`. A present value that is not a list of non-empty plugin-name strings now
+  carries the same read error as a truncated profile, so `listInstalled` emits
+  an `unreadable profile` row and `audit` prints the `profile manifest` failure
+  naming the exact `package.json` before exiting `1`. The valid
+  `["ghost-plugin"]` control still reports a `missing` install and exits `1`,
+  and an empty list still exits `0` with the empty-profile line.
+  `test/audit-home-malformed-bundles.test.mjs` pins the string, object and
+  `[42]` shapes at the shipped-CLI and library boundaries together with those
+  two controls.
+
+- **`doctor --remote` and `audit --remote` read the declared patch body.**
+  The remote reader only checked that `dsh.bundle.patch` existed, so a
+  repository whose committed `cordis.patch.yml` was empty, a plain mapping such
+  as `foo: bar`, or `- insert: []` printed `ok` and exited `0`, while a local
+  `doctor` rejected the same tree with a `patch file` failure. The remote checks
+  now run the same row detector and print the same sentence a checkout does:
+  the patch needs a top-level `- insert:` row whose entry is a mapping with a
+  non-empty `name:`. A read that failed is still a note, never a false clean.
+  `test/doctor-remote-patch-shape.test.mjs` serves the three malformed bodies
+  through the mocked contents API and compares each `doctor --remote` sentence
+  with the local `doctor()` one, then requires three valid block, indentless and
+  inline `- insert:` bodies to exit `0`. The batch form carries the same
+  finding: `test/audit-batch-patch-shape.test.mjs` serves three malformed and
+  three valid repositories to `audit --remote --from`, requires the printed
+  `3 clean, 3 failing (3 problems)` summary and exit `1`, and checks every
+  malformed `--json` object for the `patch file` failure, so no repository in a
+  repair sweep can be counted clean.
+
+## 0.22.0
+
+- **The dry-run index preflight is pinned at the installed-tarball boundary.**
+  The earlier tests spawned the checkout's `bin/dsh-plugin.mjs`, which is not
+  the file npm installs, so a tarball that omitted the preflight or a module it
+  needs could still pass the suite. `test/release-dry-run-index-tarball.test.mjs`
+  now packs this package, installs the tarball into a temp prefix, and runs the
+  installed `index` and `release --dry-run` on three malformed index shapes
+  (missing `plugins`, non-array `versions`, a version without `engines.dsh`) and
+  three valid ones (empty versions, one version, two plugins). Each malformed
+  index must be rejected 3/3 with the same finding and no tag or patch step, so
+  the test requires `false_plans=0/3`; every valid index must keep the tag and
+  patch step, `clean_plans=3/3`. Against the published 0.21.2 tarball the same
+  test records `false_plans=3/3`.
+
+- **The real `release` runs the same index preflight before it tags.**
+  `release --dry-run` already refused to print a tag step for an index that
+  `index` rejects, but the real command still created and pushed
+  `plugin-v...` before reading `market/index.json`. It now runs the identical
+  read/shape/`engines.dsh` check before it inspects or creates any tag, prints
+  the same sections `index` prints, exits `1`, and leaves `git tag -l` empty.
+  This includes the `--market` checkout and an explicit `--index` file, and a
+  resume is covered too: pushing an existing tag starts the publish, so the
+  index is checked first. A clean index still proceeds to the tag step.
+  `test/release-index-preflight.test.mjs` covers the three malformed shapes at
+  the library and CLI boundary, the empty-tag assertion, and a clean release.
+
+- **`release --dry-run` reads the market index before it prints a tag step.**
+  A dry run used to list `git tag` and `patch market/index.json` even when
+  `index` rejected that file, so the first time the author learned the index
+  was malformed was after the tag was public. The plan now runs the same
+  read/shape/`engines.dsh` preflight as `index`, prints those exact sections,
+  and exits `1` without listing the tag step. This includes the `--market`
+  checkout and an explicit `--index` file, so the dry run validates the file it
+  says it will patch. A valid index still plans the release, and a checkout
+  with no index keeps its old plan.
+  `test/release-dry-run-index.test.mjs` covers three malformed shapes, the
+  valid control, `--market`, and an invalid named `--index`.
+
 ## 0.21.2
 
 - **The three unnameable insert shapes are pinned from the installed tarball.**
