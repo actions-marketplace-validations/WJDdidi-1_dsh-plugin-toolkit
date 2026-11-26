@@ -1,4 +1,4 @@
-## 0.22.1
+## 0.23.0
 
 - **The malformed-`dsh.profile.bundles` verdict is pinned at the
   installed-tarball boundary.** The earlier test spawned the checkout's
@@ -29,6 +29,8 @@
   `test/audit-home-malformed-bundles.test.mjs` pins the string, object and
   `[42]` shapes at the shipped-CLI and library boundaries together with those
   two controls.
+
+## 0.22.1
 
 - **`doctor --remote` and `audit --remote` read the declared patch body.**
   The remote reader only checked that `dsh.bundle.patch` existed, so a
